@@ -5,7 +5,7 @@ extends Control
 ## - Dynamic Interaction Prompts for Deathboxes, Supply Bins, Loot Ticks, Dropped 3D Weapons/Loot, Ziplines & Jump Towers
 ## - Top-Left Minimap + Live Behavior Recorder & AI Imitation Status Badge ([F8] Record / [F9] Train AI)
 ## - Bottom-Left Squad & Player Card with Live Consumable Count & Cast Progress
-## - Bottom-Right Dual Weapon Tabs, Silhouettes (including Bocek Bow, Shotguns, Charge Rifle), and Ammo Reserve Readout
+## - Bottom-Right Dual Weapon Tabs, Silhouettes, and Live-Synced Backpack Ammo Reserve Readout (`PlayerState.get_reserve_ammo`)
 
 var player: CharacterBody3D
 var weapon_ctrl: Node
@@ -225,7 +225,6 @@ class MinimapWidget extends Control:
 		var m_w: float = font.get_string_size("M", HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 		draw_string(font, Vector2(m_badge_rect.position.x + (20.0 - m_w) * 0.5, m_badge_rect.position.y + 15.0), "M", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#0f172a"))
 
-		# Live AI Behavior Recorder Status Badge next to [M]
 		var rec_txt: String = "🔴 [F8] 行为录制中 (%d)" % BehaviorRecorder.recorded_frames.size() if BehaviorRecorder.is_recording else ("🧠 [F9] AI模仿已激活" if BehaviorRecorder.use_imitation_ai else "[F8] 录行为 [F9] 训AI")
 		var rec_col: Color = Color("#ef4444") if BehaviorRecorder.is_recording else (Color("#22c55e") if BehaviorRecorder.use_imitation_ai else Color("#94a3b8"))
 		draw_string(font, Vector2(map_pos.x + 26.0, map_pos.y - 9.0), rec_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, rec_col)
@@ -368,7 +367,6 @@ class TopRightWidget extends Control:
 		])
 
 		if is_victory:
-			# Apex Champion Gold Badge
 			draw_colored_polygon(b_pts, Color(0.22, 0.16, 0.04, 0.94))
 			draw_polyline(b_pts, Color(0.96, 0.78, 0.20, 1.0), 2.0)
 			draw_line(Vector2(badge_x + slant + 4, badge_y + 2), Vector2(badge_x + badge_w - 4, badge_y + 2), Color(1.0, 0.9, 0.4, 0.6), 1.2)
@@ -377,7 +375,6 @@ class TopRightWidget extends Control:
 			draw_string(font, Vector2(badge_x + 54, badge_y + 20), "捍卫者小队 (CHAMPION)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fef08a"))
 			draw_string(font, Vector2(badge_x + 204, badge_y + 21), "👥 %d" % PlayerState.players_alive, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#86efac"))
 		elif is_final_two:
-			# Intense Final 2 Showdown Alert
 			draw_colored_polygon(b_pts, Color(0.18, 0.06, 0.06, 0.92))
 			draw_polyline(b_pts, Color(0.95, 0.35, 0.15, 0.95), 1.6)
 
@@ -386,7 +383,6 @@ class TopRightWidget extends Control:
 			var pl_txt := "👥 %d" % PlayerState.players_alive
 			draw_string(font, Vector2(badge_x + 160, badge_y + 21), pl_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ffffff"))
 		else:
-			# Standard In-Game Count
 			draw_colored_polygon(b_pts, Color(0.06, 0.08, 0.12, 0.88))
 			draw_polyline(b_pts, Color(1.0, 1.0, 1.0, 0.2), 1.2)
 
@@ -494,7 +490,6 @@ class BottomLeftWidget extends Control:
 		draw_rect(Rect2(info_x, hp_y, 230.0, 7.0), Color(0.1, 0.14, 0.18, 0.9), true)
 		draw_rect(Rect2(info_x, hp_y, 230.0 * hp_frac, 7.0), Color("#ffffff"), true)
 
-		# Quick Heal Slot [4] (Displays real count of selected consumable!)
 		var heal_x: float = base_x + p_card_w + 24.0
 		var heal_y: float = p_card_y + 22.0
 		var hid: String = PlayerState.selected_heal_id
@@ -636,7 +631,8 @@ class BottomRightWidget extends Control:
 			draw_string(font, Vector2(base_x + 62.0, base_y + 62.0), cat_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#38bdf8"))
 
 			var ammo_type: String = str(wep_info.get("ammo", "light"))
-			var res_ammo: int = int(PlayerState.ammo_reserve.get(ammo_type, 0))
+			# Live-read reserve ammo directly from backpack inventory so HUD & Backpack NEVER diverge!
+			var res_ammo: int = PlayerState.get_reserve_ammo(ammo_type)
 			if cur_wid == "bocek":
 				cur_ammo = res_ammo
 
@@ -682,7 +678,6 @@ class BottomRightWidget extends Control:
 	func _draw_weapon_silhouette(pos: Vector2, wid: String = "r301", cat: String = "AR") -> void:
 		var col := Color(1.0, 1.0, 1.0, 0.9)
 		if wid == "bocek":
-			# Compound Bow Silhouette
 			draw_arc(pos + Vector2(18, 4), 18.0, -PI * 0.45, PI * 0.45, 16, Color("#f59e0b"), 2.5)
 			draw_line(pos + Vector2(6, -12), pos + Vector2(6, 20), col, 1.5)
 			draw_line(pos + Vector2(-4, 4), pos + Vector2(42, 4), Color("#38bdf8"), 2.0)
@@ -733,11 +728,11 @@ class ReticleWidget extends Control:
 			return
 		var vp: Vector2 = get_viewport_rect().size
 		var c: Vector2 = vp * 0.5
-		var col := Color(1.0, 1.0, 1.0, 0.75)
+		var col := Color(1.0, 1.0, 1.0, 0.78)
 		var t_len: float = 7.0
 		var gap: float = 6.0
 		draw_line(c + Vector2(0, -gap - t_len), c + Vector2(0, -gap), col, 1.5)
 		draw_line(c + Vector2(0, gap), c + Vector2(0, gap + t_len), col, 1.5)
 		draw_line(c + Vector2(-gap - t_len, 0), c + Vector2(-gap, 0), col, 1.5)
 		draw_line(c + Vector2(gap, 0), c + Vector2(gap + t_len, 0), col, 1.5)
-		draw_circle(c, 1.2, Color(1, 1, 1, 0.85))
+		draw_circle(c, 1.4, Color(1, 1, 1, 0.88))

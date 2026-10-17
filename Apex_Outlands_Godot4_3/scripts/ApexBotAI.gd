@@ -1,19 +1,19 @@
 class_name ApexBotAI
 extends CharacterBody3D
 ## Autonomous Smart AI Legend Bot / Firing Range Combat Dummy for Godot 4.3.
-## Fixes & Upgrades:
-## 1. Zero Wall-Phasing (`自动穿墙修复`): Adds true CapsuleShape3D physics collision (`collision_layer = 4`, `collision_mask = 1`),
-##    gravity (`24.5 m/s²`), `move_and_slide()`, and 3D raycast wall-avoidance steering so AI NEVER walks through walls, rocks, or crates!
-## 2. Strictly Player-Identical Performance Limits (`不能出现超出人物性能以外的行为`):
-##    - Movement speed strictly bounded by player speeds (`base_speed = 9.5`, `crouch = 6.2`, `heal_walk = 5.2`, `ads_strafe = 6.8`).
-##    - Obeys authentic weapon magazine capacity (`24` rounds) and reload time (`2.4s`), and cannot fire while reloading or healing.
-##    - Obeys authentic Consumable cast times (`5.0s` for Shield Battery, `3.0s` for Shield Cell, `5.0s` for Syringe) with 3D held battery/syringe animation.
-##    - Requires unobstructed 3D Physics Raycast Line-of-Sight (`_has_line_of_sight_to_player`) before shooting!
-## 3. Player Behavior Imitation Learning (`BehaviorRecorder` integration):
-##    - Dynamically adapts strafe frequency, crouch-weave ratio, jump-peek timing, and cover/heal thresholds from recorded player trajectories!
+## Upgrades:
+## 1. Zero Wall-Phasing (`自动穿墙修复`): True CapsuleShape3D physics collision (`collision_layer = 4`, `collision_mask = 1`),
+##    gravity (`24.5 m/s²`), `move_and_slide()`, and 3D raycast wall-avoidance steering.
+## 2. Strictly Player-Identical Performance & Weapon Sync (`ai和玩家动作性能保证一致`):
+##    - Equips real weapons from `GameData.WEAPONS` (`r301`, `flatline`, `volt`, `peacekeeper`, `hemlok`, `car`, `prowler`) with matching 3D models in two hands (`LegendRigBuilder.create_legend_rig(leg, bot_weapon_id)`).
+##    - Uses player-identical speeds (`base_speed = 9.6`, `crouch = 6.2`, `heal_walk = 5.2`, `slide_speed = 18.8`) and tactical Slide-Jump maneuvers!
+##    - Obeys authentic weapon magazine capacity (`GameData.get_weapon_mag_capacity`) and reload time, and holsters weapon onto back while using Shield Battery (`5.0s`) or Syringe (`5.0s`).
+## 3. Authentic Knockdown & Elimination Feedback (`image_0ab157.jpg`):
+##    - Emits `PlayerState.enemy_knocked_down` and `PlayerState.enemy_eliminated` with cumulative damage inflicted for the center-bottom HUD prompt!
 
 var bot_name: String = "敌方传奇"
 var legend_data: Dictionary = {}
+var bot_weapon_id: String = "r301"
 var hp: float = 100.0
 var max_hp: float = 100.0
 var shield: float = 75.0
@@ -23,20 +23,22 @@ var spawn_origin: Vector3 = Vector3.ZERO
 var strafe_phase: float = 0.0
 var strafe_dir: float = 1.0
 var ai_mode: String = "strafe" # "static", "strafe", "combat"
-var ai_state: String = "STRAFE_DUEL" # "STRAFE_DUEL", "SEEK_COVER_HEAL", "ESCAPE_STORM", "RELOADING", "AGGRESSIVE_PUSH"
+var ai_state: String = "STRAFE_DUEL" # "STRAFE_DUEL", "SEEK_COVER_HEAL", "ESCAPE_STORM", "RELOADING", "SLIDE_EVADE"
 var active_heal_type: String = "shield_battery"
 var scanned_timer: float = 0.0
 var heal_timer: float = 0.0
 var fire_cooldown: float = 1.2
 var crouch_timer: float = 0.0
+var combat_slide_timer: float = 0.0
 var hit_flinch: float = 0.0
 var storm_tick_timer: float = 0.0
 var storm_slide_timer: float = 0.0
 var is_sliding: bool = false
+var aim_pitch: float = 0.0
 
 # Authentic Weapon Magazine & Reload State (Matches Player Performance)
-var bot_ammo: int = 24
-var bot_max_ammo: int = 24
+var bot_ammo: int = 28
+var bot_max_ammo: int = 28
 var bot_reload_timer: float = 0.0
 var bot_batteries_left: int = 2
 var bot_syringes_left: int = 2
@@ -56,7 +58,6 @@ var dying_weapon_name: String = ""
 var squad_id: int = 1
 
 func _ready() -> void:
-	# Add true CapsuleShape3D collision matching PlayerController so AI obeys physics & walls!
 	collision_layer = 4
 	collision_mask = 1
 	floor_snap_length = 0.35
@@ -85,7 +86,12 @@ func setup(leg: Dictionary, pos: Vector3, title: String, evo_lv: int = 2, sq_id:
 	if PlayerState.selected_mode_id != "firing_range":
 		ai_mode = "combat"
 
-	rig_node = LegendRigBuilder.create_legend_rig(leg)
+	var bot_weps := ["r301", "flatline", "volt", "peacekeeper", "hemlok", "car", "prowler", "spitfire"]
+	bot_weapon_id = bot_weps[absi(title.hash()) % bot_weps.size()]
+	bot_max_ammo = GameData.get_weapon_mag_capacity(bot_weapon_id, 2)
+	bot_ammo = bot_max_ammo
+
+	rig_node = LegendRigBuilder.create_legend_rig(leg, bot_weapon_id)
 	add_child(rig_node)
 
 	status_lbl = Label3D.new()
@@ -154,7 +160,6 @@ func _update_overhead_label() -> void:
 	status_lbl.modulate = Color("#ef4444") if scanned_timer > 0.0 else tier["color"]
 
 func _has_line_of_sight_to_player(player_node: Node3D) -> bool:
-	## Checks 3D physics world (collision_mask = 1) so AI NEVER sees or shoots through walls!
 	if player_node == null or get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return true
 	var from_pt: Vector3 = global_position + Vector3(0, 1.52, 0)
@@ -164,7 +169,6 @@ func _has_line_of_sight_to_player(player_node: Node3D) -> bool:
 	return hit.is_empty()
 
 func _is_wall_in_direction(dir_world: Vector3, check_dist: float = 2.0) -> bool:
-	## Checks if a wall or obstacle is blocking the desired movement direction.
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return false
 	var from_pt: Vector3 = global_position + Vector3(0, 0.95, 0)
@@ -182,7 +186,7 @@ func _physics_process(delta: float) -> void:
 			visible = false
 			PlayerState.deathbox_spawn_requested.emit(global_position, bot_name, evo_level, dying_weapon_name)
 			if PlayerState.selected_mode_id == "firing_range" or PlayerState.selected_mode_id == "mixtape_tdm":
-				await get_tree().create_timer(3.2).timeout
+				await get_tree().create_timer(3.0).timeout
 				hp = max_hp
 				shield = max_shield
 				bot_ammo = bot_max_ammo
@@ -236,20 +240,17 @@ func _physics_process(delta: float) -> void:
 	if hit_flinch > 0.0:
 		hit_flinch = maxf(0.0, hit_flinch - delta * 5.0)
 
-	# Apply authentic gravity identical to PlayerController (24.5 m/s^2)
 	if not is_on_floor():
 		velocity.y -= 24.5 * delta
 	elif velocity.y < 0.0:
 		velocity.y = -0.5
 
-	# Storm / Ring Relocation & Radiation Check (Battle Royale Mode)
 	var dist_from_center: float = Vector2(global_position.x, global_position.z).length()
 	var cur_ring_r: float = PlayerState.ring_radius
 	var is_outside_ring: bool = (dist_from_center > cur_ring_r)
 	var is_near_storm_edge: bool = (dist_from_center > cur_ring_r - 20.0)
 
 	if PlayerState.selected_mode_id != "firing_range":
-		# Storm radiation damage ticks every 1.0s when outside safe zone (bypasses shields directly to HP!)
 		if is_outside_ring:
 			storm_tick_timer -= delta
 			if storm_tick_timer <= 0.0:
@@ -262,18 +263,15 @@ func _physics_process(delta: float) -> void:
 		else:
 			storm_tick_timer = 0.5
 
-		# State transition for escaping the closing storm
 		if (is_outside_ring or is_near_storm_edge) and ai_state != "SEEK_COVER_HEAL":
 			if ai_state != "ESCAPE_STORM":
 				ai_state = "ESCAPE_STORM"
 				_update_overhead_label()
 		elif ai_state == "ESCAPE_STORM" and dist_from_center < cur_ring_r - 35.0:
-			# Successfully reached deep inside safe zone
 			ai_state = "STRAFE_DUEL"
-			spawn_origin = global_position # Re-anchor inside safe ring so bot never returns outside!
+			spawn_origin = global_position
 			_update_overhead_label()
 
-	# Locate Player node
 	var player_node: PlayerController = null
 	if get_parent():
 		for c in get_parent().get_children():
@@ -286,6 +284,8 @@ func _physics_process(delta: float) -> void:
 	if player_node != null:
 		dist_to_player = global_position.distance_to(player_node.global_position)
 		has_los = _has_line_of_sight_to_player(player_node)
+		var dy: float = (player_node.global_position.y + 1.35) - (global_position.y + 1.45)
+		aim_pitch = clampf(atan2(dy, maxf(1.0, dist_to_player)), -0.65, 0.65)
 		if ai_state != "ESCAPE_STORM":
 			var look_pt := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
 			if global_position.distance_to(look_pt) > 0.5:
@@ -295,7 +295,6 @@ func _physics_process(delta: float) -> void:
 	var is_crouching: bool = false
 	var desired_vel_xz := Vector3.ZERO
 
-	# Tick AI Weapon Reload (strictly obeys player 2.4s reload time!)
 	if bot_reload_timer > 0.0:
 		bot_reload_timer -= delta
 		if bot_reload_timer <= 0.0:
@@ -312,11 +311,9 @@ func _physics_process(delta: float) -> void:
 
 		strafe_phase += delta * (2.6 + strafe_freq * 0.55)
 
-		# Query Player Behavior Imitation Policy if enabled
 		var imit: Dictionary = BehaviorRecorder.query_imitation_action(dist_to_player, hp, shield, float(bot_ammo) / float(bot_max_ammo))
 		var use_imit: bool = not imit.is_empty()
 
-		# Smart AI State Transitions: Trigger Shield Battery (5.0s) or Syringe (5.0s) when low
 		var wants_heal: bool = (shield <= heal_thresh and hp < 85.0 and (bot_batteries_left > 0 or bot_syringes_left > 0))
 		if use_imit and bool(imit.get("heal", false)) and (shield < max_shield * 0.5 or hp < 75.0):
 			wants_heal = true
@@ -325,25 +322,25 @@ func _physics_process(delta: float) -> void:
 			ai_state = "SEEK_COVER_HEAL"
 			if shield <= 0.0 and bot_batteries_left > 0:
 				active_heal_type = "shield_battery"
-				heal_timer = 5.0 # Authentic 5.0s Shield Battery cast time!
+				heal_timer = 5.0
 				bot_batteries_left -= 1
 			elif hp < 65.0 and bot_syringes_left > 0:
 				active_heal_type = "syringe"
-				heal_timer = 5.0 # Authentic 5.0s Syringe cast time!
+				heal_timer = 5.0
 				bot_syringes_left -= 1
 			else:
 				active_heal_type = "shield_cell"
-				heal_timer = 3.0 # Authentic 3.0s Shield Cell cast time!
+				heal_timer = 3.0
 			heal_fx_mesh.visible = true
 			_update_overhead_label()
 
 		if ai_state == "SEEK_COVER_HEAL":
 			is_crouching = true
 			is_moving = true
+			is_sliding = false
 			heal_timer -= delta
 			heal_fx_mesh.position.y = 0.6 + sin(strafe_phase * 2.0) * 0.45
 
-			# Move laterally at player-identical healing walk speed (5.2 m/s max) while avoiding walls
 			var right_dir: Vector3 = global_transform.basis.x * strafe_dir
 			if _is_wall_in_direction(right_dir, 2.0) or is_on_wall():
 				strafe_dir = -strafe_dir
@@ -363,15 +360,12 @@ func _physics_process(delta: float) -> void:
 				_update_overhead_label()
 		elif ai_state == "ESCAPE_STORM":
 			is_moving = true
-			# Vector pointing directly to safe zone center (origin)
 			var to_center := Vector3(-global_position.x, 0.0, -global_position.z)
 			var safe_dir := to_center.normalized() if to_center.length() > 0.1 else Vector3.FORWARD
 
-			# Add squad/phase lateral offset so bots don't form a single-file line
 			var squad_jitter: float = sin(strafe_phase * 0.45 + float(squad_id) * 1.5) * 0.22
 			var run_dir: Vector3 = (safe_dir + global_transform.basis.x * squad_jitter).normalized()
 
-			# Wall & Obstacle Avoidance along escape route
 			if _is_wall_in_direction(run_dir, 3.2) or is_on_wall():
 				var left_steer := run_dir.rotated(Vector3.UP, 0.75)
 				var right_steer := run_dir.rotated(Vector3.UP, -0.75)
@@ -382,32 +376,28 @@ func _physics_process(delta: float) -> void:
 				else:
 					run_dir = safe_dir.rotated(Vector3.UP, 1.4 * strafe_dir)
 
-			# High-speed sprint & momentum sliding (12.8 ~ 14.8 m/s, strictly within player sprint bounds)
 			var run_speed: float = 12.8
 			storm_slide_timer += delta
-			if storm_slide_timer > 3.6:
-				if storm_slide_timer < 4.4:
+			if storm_slide_timer > 3.4:
+				if storm_slide_timer < 4.3:
 					is_sliding = true
 					is_crouching = true
-					run_speed = 14.8
+					run_speed = 16.5
 				else:
 					is_sliding = false
 					storm_slide_timer = 0.0
 			else:
 				is_sliding = false
 
-			# Auto-vault / Jump over rocks & low walls while sprinting
 			if is_on_floor() and (is_on_wall() or _is_wall_in_direction(run_dir, 1.6)):
-				velocity.y = 11.2
+				velocity.y = 11.4
 
 			desired_vel_xz = run_dir * run_speed
 
-			# Look towards running direction or glance back at player
 			if player_node != null and dist_to_player < 26.0 and has_los and not is_outside_ring:
 				var look_p := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
 				if global_position.distance_to(look_p) > 0.5:
 					look_at(look_p, Vector3.UP)
-				# Suppressive return fire while retreating
 				if bot_reload_timer <= 0.0 and bot_ammo > 0:
 					fire_cooldown -= delta
 					if fire_cooldown <= 0.0:
@@ -418,7 +408,6 @@ func _physics_process(delta: float) -> void:
 				if global_position.distance_to(forward_target) > 0.5:
 					look_at(forward_target, Vector3.UP)
 
-			# Emergency heal in storm: If health drops below 35 and bot has syringes
 			if is_outside_ring and hp < 35.0 and bot_syringes_left > 0 and heal_timer <= 0.0:
 				ai_state = "SEEK_COVER_HEAL"
 				active_heal_type = "syringe"
@@ -428,53 +417,59 @@ func _physics_process(delta: float) -> void:
 				_update_overhead_label()
 		else:
 			is_moving = true
-			is_sliding = false
-			# Strafe reversal on timer, imitation policy, or wall detection
 			if use_imit and absf(float(imit.get("move_x", 0.0))) > 0.2:
 				strafe_dir = signf(float(imit["move_x"]))
 			elif randf() < 0.025:
 				strafe_dir = -strafe_dir
 
-			# Crouch-weaving like real Apex players
-			if use_imit:
-				if bool(imit.get("crouch", false)) and crouch_timer <= 0.0:
-					crouch_timer = 0.48
-			elif randf() < (0.012 + crouch_prob * 0.03) and crouch_timer <= 0.0:
-				crouch_timer = 0.55
-
-			if crouch_timer > 0.0:
-				crouch_timer -= delta
+			# Tactical combat slide-evade when taking fire or repositioning
+			if combat_slide_timer > 0.0:
+				combat_slide_timer -= delta
+				is_sliding = true
 				is_crouching = true
+			else:
+				is_sliding = false
+				if is_on_floor() and ai_mode == "combat" and randf() < 0.005:
+					combat_slide_timer = 0.68
+					is_sliding = true
+					is_crouching = true
 
-			# Jump-peek on floor (bounded by player jump_velocity = 11.2)
+			if not is_sliding:
+				if use_imit:
+					if bool(imit.get("crouch", false)) and crouch_timer <= 0.0:
+						crouch_timer = 0.48
+				elif randf() < (0.012 + crouch_prob * 0.03) and crouch_timer <= 0.0:
+					crouch_timer = 0.55
+
+				if crouch_timer > 0.0:
+					crouch_timer -= delta
+					is_crouching = true
+
 			if is_on_floor() and ((use_imit and bool(imit.get("jump", false))) or randf() < jump_prob * 0.008):
-				velocity.y = 11.2
+				velocity.y = 11.4
 
-			# Compute lateral + forward/back velocity strictly within player speed limits (6.8 m/s ADS strafe, 6.2 m/s crouch)
-			var move_spd: float = 6.2 if is_crouching else 6.85
+			var move_spd: float = 15.8 if is_sliding else (6.2 if is_crouching else 7.2)
 			var lat_vec: Vector3 = global_transform.basis.x * strafe_dir
 			if _is_wall_in_direction(lat_vec, 2.2) or is_on_wall():
 				strafe_dir = -strafe_dir
 				lat_vec = -lat_vec
 
-			# Keep near spawn_origin in firing range, or maintain optimal combat distance in BR
 			var to_spawn: Vector3 = spawn_origin - global_position
 			to_spawn.y = 0.0
 			var anchor_pull: Vector3 = to_spawn.normalized() * clampf(to_spawn.length() * 0.35, 0.0, 2.5)
 			desired_vel_xz = (lat_vec + anchor_pull * 0.35).normalized() * move_spd
 
-			# AI Combat Shooting at Player (Only when Line-of-Sight is clear, not reloading, and not healing!)
 			if ai_mode == "combat" and player_node != null and dist_to_player < 68.0 and has_los and bot_reload_timer <= 0.0 and not player_node.in_dropship and not player_node.is_skydiving:
 				fire_cooldown -= delta
 				if fire_cooldown <= 0.0:
 					if bot_ammo <= 0:
-						bot_reload_timer = 2.4
+						var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
+						bot_reload_timer = float(wep_d.get("reload", 2.3))
 						_update_overhead_label()
 					else:
-						fire_cooldown = randf_range(1.10, 1.95)
+						fire_cooldown = randf_range(1.05, 1.85)
 						_fire_burst_at_player(player_node)
 
-	# Smoothly accelerate horizontal velocity and call move_and_slide() so AI respects all walls & floors!
 	velocity.x = lerpf(velocity.x, desired_vel_xz.x, delta * 10.0)
 	velocity.z = lerpf(velocity.z, desired_vel_xz.z, delta * 10.0)
 	move_and_slide()
@@ -493,7 +488,9 @@ func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> vo
 		"is_healing": (ai_state == "SEEK_COVER_HEAL"),
 		"heal_id": active_heal_type,
 		"is_reloading": (bot_reload_timer > 0.0),
-		"is_firing": (fire_cooldown > 0.0 and fire_cooldown < 0.20 and bot_reload_timer <= 0.0),
+		"is_firing": (fire_cooldown > 0.0 and fire_cooldown < 0.22 and bot_reload_timer <= 0.0),
+		"aim_pitch": aim_pitch,
+		"weapon_id": bot_weapon_id,
 		"strafe_phase": strafe_phase,
 		"strafe_dir": strafe_dir,
 		"hit_flinch": hit_flinch,
@@ -504,10 +501,10 @@ func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> vo
 	LegendRigBuilder.animate_rig(rig_node, delta, anim_dict)
 
 func _fire_burst_at_player(player_node: PlayerController) -> void:
-	# Consume 3 rounds per burst and trigger reload if empty
 	bot_ammo = maxi(0, bot_ammo - 3)
 	if bot_ammo <= 0:
-		bot_reload_timer = 2.4
+		var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
+		bot_reload_timer = float(wep_d.get("reload", 2.3))
 		_update_overhead_label()
 
 	if rig_node != null:
@@ -519,7 +516,6 @@ func _fire_burst_at_player(player_node: PlayerController) -> void:
 					mflash.visible = false
 			)
 
-	# Verify line-of-sight and stop tracer at walls if occluded
 	var p_from: Vector3 = global_position + Vector3(0, 1.38, 0)
 	var p_to: Vector3 = player_node.global_position + Vector3(randf_range(-0.55, 0.55), 1.2, randf_range(-0.55, 0.55))
 	var blocked_by_wall: bool = false
@@ -554,9 +550,8 @@ func _fire_burst_at_player(player_node: PlayerController) -> void:
 				tr.queue_free()
 		)
 
-	# Apply damage ONLY if not blocked by a wall and player is not in Void Phase
 	if not blocked_by_wall and PlayerState.void_timer <= 0.0 and randf() < 0.40:
-		var dmg: float = 9.0
+		var dmg: float = 10.0
 		if PlayerState.selected_legend_id == "gibraltar" and player_node.is_ads and PlayerState.gun_shield_hp > 0.0:
 			PlayerState.gun_shield_hp = maxf(0.0, PlayerState.gun_shield_hp - dmg)
 			return
@@ -570,7 +565,7 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 	if hp <= 0.0:
 		return
 	var now_ms: int = Time.get_ticks_msec()
-	if now_ms - last_hit_ms > 1650:
+	if now_ms - last_hit_ms > 2200:
 		combo_damage = 0
 		combo_hits = 0
 	last_hit_ms = now_ms
@@ -578,7 +573,6 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 	combo_hits += 1
 	hit_flinch = 1.0
 
-	# Interrupt AI healing if hit for heavy damage
 	if ai_state == "SEEK_COVER_HEAL" and dmg >= 25 and heal_fx_mesh:
 		ai_state = "STRAFE_DUEL"
 		heal_fx_mesh.visible = false
@@ -597,6 +591,10 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 			PlayerState.killfeed_pushed.emit("⚡ 击碎了 %s 的 Lv.%d 进化护盾！" % [bot_name, evo_level], GameData.get_evo_tier(evo_level)["color"])
 			if GameData.get_legend_by_id(PlayerState.selected_legend_id)["class_id"] == "ASSAULT":
 				PlayerState.double_time_timer = 3.5
+			# AI triggers evasive combat slide when shield is cracked!
+			if is_on_floor() and ai_mode != "static":
+				combat_slide_timer = 0.65
+				is_sliding = true
 		else:
 			AudioSynthesizer.play_armor_hit(evo_level, is_headshot, combo_hits)
 	else:
@@ -608,7 +606,7 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 	PlayerState.add_damage_and_evo(dmg)
 	var display_tier: int = evo_level if had_shield else 0
 	PlayerState.hit_feedback_pushed.emit(bot_name, dmg, combo_damage, is_headshot, display_tier, cracked_now)
-	var hit_wpos: Vector3 = global_position + Vector3(0, 1.45, 0)
+	var hit_wpos: Vector3 = global_position + Vector3(0, 1.48, 0)
 	PlayerState.floating_damage_spawned.emit(hit_wpos, dmg, is_headshot, display_tier, cracked_now)
 	_update_overhead_label()
 
@@ -619,7 +617,9 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 		if PlayerState.beast_timer > 0.0:
 			PlayerState.beast_timer += 4.0
 			PlayerState.hp = minf(PlayerState.max_hp, PlayerState.hp + 40.0)
-		PlayerState.killfeed_pushed.emit("💀 你使用 [%s] 淘汰了 %s" % [weapon_name, bot_name], Color("#ff1e42"))
+		var inflicted: int = maxi(100, combo_damage)
+		PlayerState.enemy_knocked_down.emit(bot_name, weapon_name, inflicted, 150)
+		PlayerState.killfeed_pushed.emit("💀 你使用 [%s] 击倒并淘汰了 %s" % [weapon_name, bot_name], Color("#ff1e42"))
 		PlayerState.enemy_eliminated.emit(bot_name, weapon_name, PlayerState.kills)
 		is_dying = true
 		death_collapse_timer = 0.0
@@ -658,7 +658,6 @@ func _spawn_shield_crack_vfx() -> void:
 func apply_storm_damage(dmg: float) -> void:
 	if hp <= 0.0 or is_dying:
 		return
-	# Storm radiation directly reduces flesh HP, bypassing shields
 	hp = maxf(0.0, hp - dmg)
 	hit_flinch = 0.5
 	_update_overhead_label()

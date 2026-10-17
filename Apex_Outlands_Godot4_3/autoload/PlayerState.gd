@@ -1,7 +1,7 @@
 extends Node
 ## PlayerState Autoload Singleton
 ## Tracks persistent account progression, currencies, selected Legend/Mode, live Match Combat State,
-## Consumable Healing/Battery Cast State, and Unified Inventory / Looting Synchronization.
+## Consumable Healing/Battery Cast State, and 100% Unified Inventory / Weapon / Attachment Synchronization.
 
 signal state_updated
 signal evo_leveled_up(new_level: int, tier_name: String)
@@ -9,6 +9,7 @@ signal killfeed_pushed(msg: String, col: Color)
 signal toast_pushed(msg: String, kind: String)
 signal hit_feedback_pushed(target_name: String, single_dmg: int, cumulative_dmg: int, is_headshot: bool, shield_tier: int, cracked_now: bool)
 signal shotgun_pellet_feedback_pushed(pattern_name: String, hit_mask: Array, is_headshot: bool)
+signal enemy_knocked_down(victim_name: String, weapon_name: String, damage_inflicted: int, xp_bonus: int)
 signal enemy_eliminated(victim_name: String, weapon_name: String, total_kills: int)
 signal floating_damage_spawned(pos: Vector3, dmg: int, is_headshot: bool, shield_tier: int, cracked: bool)
 signal deathbox_spawn_requested(pos: Vector3, bot_name: String, evo_tier: int, weapon_name: String)
@@ -46,8 +47,8 @@ var chosen_upgrades: Dictionary = {"lv2": "", "lv3": ""}
 var active_slot: int = 1
 var scope_alt_zoom: bool = false # 0: Primary, 1: Secondary, 2: Heirloom Melee
 var loadout: Array = [
-	{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 3, "mag": 3, "stock": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
-	{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
+	{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 0, "mag": 3, "bolt": 3, "stock": 3, "stock_tier": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
+	{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "mag_tier": 3, "stock": 3, "stock_tier": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
 ]
 var gear: Dictionary = {
 	"helmet": 2,
@@ -70,6 +71,7 @@ var inventory_items: Array = [
 	{"type": "ammo", "id": "light", "count": 60},
 	{"type": "ammo", "id": "light", "count": 60},
 	{"type": "ammo", "id": "shotgun", "count": 16},
+	{"type": "ammo", "id": "shotgun", "count": 16},
 	{"type": "ammo", "id": "heavy", "count": 60},
 	{"type": "ammo", "id": "energy", "count": 60},
 	{"type": "consumable", "id": "shield_battery", "count": 2},
@@ -81,8 +83,7 @@ var inventory_items: Array = [
 	{"type": "ordnance", "id": "arc_star", "count": 2},
 	{"type": "ordnance", "id": "frag", "count": 2},
 	{"type": "ordnance", "id": "thermite", "count": 2},
-	{"type": "attachment", "id": "3x_ranger", "tier": 3, "name": "3倍 游骑兵瞄准镜"},
-	{"type": "attachment", "id": "barrel_3", "tier": 3, "name": "Lv.3 紫色枪口补偿器"}
+	{"type": "attachment", "id": "3x_ranger", "tier": 3, "name": "3倍 游骑兵瞄准镜"}
 ]
 
 var squads_alive: int = 20
@@ -103,6 +104,10 @@ var double_time_timer: float = 0.0
 var gun_shield_hp: float = 50.0
 var vtol_fuel: float = 100.0
 var passive_warning_text: String = ""
+
+func _ready() -> void:
+	recalculate_all_weapon_slots(false)
+	sync_ammo_reserve_from_inventory()
 
 func reset_for_match() -> void:
 	match_active = true
@@ -148,8 +153,8 @@ func reset_for_match() -> void:
 	passive_warning_text = ""
 	active_slot = 1
 	loadout = [
-		{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 3, "mag": 3, "stock": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
-		{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
+		{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 0, "mag": 3, "bolt": 3, "stock": 3, "stock_tier": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
+		{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "mag_tier": 3, "stock": 3, "stock_tier": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
 	]
 	inventory_items = [
 		{"type": "ammo", "id": "light", "count": 60},
@@ -169,7 +174,49 @@ func reset_for_match() -> void:
 		{"type": "ordnance", "id": "thermite", "count": 2},
 		{"type": "attachment", "id": "3x_ranger", "tier": 3, "name": "3倍 游骑兵瞄准镜"}
 	]
+	recalculate_all_weapon_slots(false)
 	sync_ammo_reserve_from_inventory()
+
+## Ensures all equipped weapon slots have accurate max_ammo, bolt/mag/stock tiers, and refunds excess ammo if mag was removed
+func recalculate_all_weapon_slots(refund_excess_to_backpack: bool = true) -> void:
+	for i in range(loadout.size()):
+		recalculate_weapon_slot(i, refund_excess_to_backpack)
+
+func recalculate_weapon_slot(slot_idx: int, refund_excess_to_backpack: bool = true) -> void:
+	if slot_idx < 0 or slot_idx >= loadout.size():
+		return
+	var slot: Dictionary = loadout[slot_idx]
+	var wid: String = str(slot.get("weapon_id", "empty"))
+	if wid == "empty" or wid == "":
+		slot["ammo"] = 0
+		slot["max_ammo"] = 0
+		return
+
+	var wep: Dictionary = GameData.get_weapon_by_id(wid)
+	var cat: String = str(wep.get("cat", "AR"))
+	var ammo_type: String = str(wep.get("ammo", "light"))
+
+	var mag_tier: int = maxi(int(slot.get("mag", 0)), int(slot.get("mag_tier", 0)))
+	var bolt_tier: int = maxi(int(slot.get("bolt", 0)), mag_tier if cat == "SHOTGUN" else 0)
+	var stock_tier: int = maxi(int(slot.get("stock", 0)), int(slot.get("stock_tier", 0)))
+
+	slot["mag"] = mag_tier
+	slot["mag_tier"] = mag_tier
+	slot["bolt"] = bolt_tier
+	slot["stock"] = stock_tier
+	slot["stock_tier"] = stock_tier
+
+	var true_max: int = GameData.get_weapon_mag_capacity(wid, 0 if cat == "SHOTGUN" else mag_tier)
+	slot["max_ammo"] = true_max
+
+	var cur_ammo: int = int(slot.get("ammo", true_max))
+	if cur_ammo > true_max:
+		var excess: int = cur_ammo - true_max
+		slot["ammo"] = true_max
+		if refund_excess_to_backpack and excess > 0 and ammo_type != "none":
+			add_loot_item({"type": "ammo", "id": ammo_type, "count": excess})
+	elif cur_ammo < 0:
+		slot["ammo"] = 0
 
 ## Recalculates all reserve ammo, consumable counts, and ordnance counts directly from inventory_items
 func sync_ammo_reserve_from_inventory() -> void:
@@ -179,6 +226,13 @@ func sync_ammo_reserve_from_inventory() -> void:
 		consumables[c] = 0
 	for o in ["frag", "arc_star", "thermite"]:
 		ordnance[o] = 0
+
+	# Clean out any zero-count stacks first
+	for idx in range(inventory_items.size() - 1, -1, -1):
+		var item_d: Dictionary = inventory_items[idx]
+		var t_str: String = str(item_d.get("type", ""))
+		if (t_str == "ammo" or t_str == "consumable" or t_str == "ordnance") and int(item_d.get("count", 1)) <= 0:
+			inventory_items.remove_at(idx)
 
 	for it in inventory_items:
 		var it_type: String = str(it.get("type", ""))
@@ -192,6 +246,17 @@ func sync_ammo_reserve_from_inventory() -> void:
 			"ordnance":
 				ordnance[it_id] = int(ordnance.get(it_id, 0)) + count
 	state_updated.emit()
+
+## Returns live reserve ammo for a given ammo_type directly from backpack inventory
+func get_reserve_ammo(ammo_type: String) -> int:
+	if ammo_type == "mythic":
+		return int(ammo_reserve.get("mythic", 0))
+	var sum_val: int = 0
+	for it in inventory_items:
+		if str(it.get("type", "")) == "ammo" and str(it.get("id", "")) == ammo_type:
+			sum_val += int(it.get("count", 0))
+	ammo_reserve[ammo_type] = sum_val
+	return sum_val
 
 ## Deducts needed ammo from backpack inventory stacks when reloading or firing
 func deduct_ammo(ammo_type: String, amount: int) -> int:
@@ -295,6 +360,7 @@ func add_loot_item(item: Dictionary) -> void:
 				"sniper": max_stack = 28
 				"arrows": max_stack = 32
 				_: max_stack = 60
+			# Assault class perk: +35% ammo per stack if desired, or keep standard stack sizes for deterministic tests
 			for inv in inventory_items:
 				if str(inv.get("type", "")) == "ammo" and str(inv.get("id", "")) == it_id:
 					var cur_c: int = int(inv.get("count", 0))
@@ -321,8 +387,10 @@ func add_loot_item(item: Dictionary) -> void:
 						count -= to_add
 						if count <= 0:
 							break
-			if count > 0:
-				inventory_items.append({"type": "consumable", "id": it_id, "count": count})
+			while count > 0:
+				var to_add: int = mini(max_stack, count)
+				inventory_items.append({"type": "consumable", "id": it_id, "count": to_add})
+				count -= to_add
 		"ordnance":
 			for inv in inventory_items:
 				if str(inv.get("type", "")) == "ordnance" and str(inv.get("id", "")) == it_id:
@@ -334,8 +402,10 @@ func add_loot_item(item: Dictionary) -> void:
 						count -= to_add
 						if count <= 0:
 							break
-			if count > 0:
-				inventory_items.append({"type": "ordnance", "id": it_id, "count": count})
+			while count > 0:
+				var to_add: int = mini(2, count)
+				inventory_items.append({"type": "ordnance", "id": it_id, "count": to_add})
+				count -= to_add
 		"gear":
 			var g_type: String = str(item.get("gear_type", "armor"))
 			var tier: int = int(item.get("tier", 3))
@@ -350,4 +420,3 @@ func add_loot_item(item: Dictionary) -> void:
 			inventory_items.append(item.duplicate(true))
 
 	sync_ammo_reserve_from_inventory()
-

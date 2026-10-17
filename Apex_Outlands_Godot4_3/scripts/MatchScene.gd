@@ -1,12 +1,13 @@
 extends Node3D
-## MatchScene Controller (Godot 4.3 Pro Edition)
+## MatchScene Controller (Godot 4.3 Pro Optimized Edition)
 ## Features:
 ## - Custom procedural AdsScopeOverlay drawing all 7 authentic Apex Optics + Bocek 3-Pin Bow Sight
-## - Authentic Shotgun Pellet Hit Grid Indicator (Star-11, Line-8, Fig8-8, Triangle-3) & Precision Choke Brackets
+## - Authentic Unit-Normalized Shotgun Pellet Hit Grid Indicator (Star-11, Line-8, Fig8-8, Triangle-3) & Precision Choke Brackets
+## - Authentic Center-Bottom Knockdown & Elimination Prompt matching `image_0ab157.jpg`:
+##   Line 1: `KNOCKED DOWN [GOLD VICTIM NAME] + 150 [CHEVRON & SHIELD ICONS]`
+##   Line 2: `100 DAMAGE INFLICTED`
 ## - Live Consumable Cast Progress Bar & Ring (Shield Battery / Cell / Syringe / MedKit / Phoenix Kit)
-## - Interactive 3D Supply Bin & Loot Tick Looting: Opening a Supply Bin or Loot Tick spawns physical 3D items
-##   (Weapons, Shield Batteries, Medkits, Ammo Bricks, Attachments, Armor Cores) on the bin tray / ground that can be individually picked up with [E]!
-## - Live Player Behavior Recording ([F8] Toggle Record, [F9] Train AI from Player Trajectory)
+## - Interactive 3D Supply Bin, Loot Tick & Deathbox Looting with 100% Weapon/Ammo/Attachment Synchronization!
 
 const ApexInventoryUI = preload("res://scripts/ApexInventoryUI.gd")
 
@@ -18,11 +19,17 @@ class ScopeAndHitHUD extends Control:
 	var dmg_timer: float = 0.0
 	var crack_timer: float = 0.0
 	var pellet_timer: float = 0.0
+	var knockdown_timer: float = 0.0
+	var knockdown_victim: String = "CONDUIT6445"
+	var knockdown_xp: int = 150
+	var knockdown_dmg: int = 100
+	var knockdown_label: String = "KNOCKED DOWN"
 	var last_pellet_pattern: String = ""
 	var last_pellet_hits: Array = []
 	var last_pellet_head: bool = false
 	var bow_draw_ratio: float = 0.0
 	var choke_ratio: float = 0.0
+	var repeater_charge_ratio: float = 0.0
 	var last_cum_dmg: int = 0
 	var last_single_dmg: int = 0
 	var last_target_name: String = ""
@@ -46,7 +53,10 @@ class ScopeAndHitHUD extends Control:
 		if pellet_timer > 0.0:
 			pellet_timer = maxf(0.0, pellet_timer - delta)
 			dirty = true
-		if PlayerState.heal_cast_timer > 0.0 or bow_draw_ratio > 0.0 or choke_ratio > 0.0:
+		if knockdown_timer > 0.0:
+			knockdown_timer = maxf(0.0, knockdown_timer - delta)
+			dirty = true
+		if PlayerState.heal_cast_timer > 0.0 or bow_draw_ratio > 0.0 or choke_ratio > 0.0 or repeater_charge_ratio > 0.0:
 			dirty = true
 		if dirty:
 			queue_redraw()
@@ -188,7 +198,7 @@ class ScopeAndHitHUD extends Control:
 			draw_circle(c + Vector2(0, 12), 1.8, Color("#f59e0b"))
 			draw_circle(c + Vector2(0, 24), 1.8, Color("#ef4444"))
 
-		# 1c. Peacekeeper / Triple Take ADS Precision Choke Convergence Brackets
+		# 1c. Peacekeeper / Triple Take ADS Precision Choke & 30-30 Repeater Charge
 		if choke_ratio > 0.02:
 			var ch_dist: float = lerpf(46.0, 14.0, choke_ratio)
 			var ch_col: Color = Color("#38bdf8") if choke_ratio >= 0.95 else Color(0.22, 0.74, 0.98, 0.75)
@@ -196,10 +206,16 @@ class ScopeAndHitHUD extends Control:
 				draw_line(c + Vector2(side_x * ch_dist, -14), c + Vector2(side_x * (ch_dist - side_x * 6), 0), ch_col, 2.2)
 				draw_line(c + Vector2(side_x * (ch_dist - side_x * 6), 0), c + Vector2(side_x * ch_dist, 14), ch_col, 2.2)
 
+		if repeater_charge_ratio > 0.02:
+			var rep_w: float = 54.0
+			var rep_y: float = c.y + 34.0
+			draw_rect(Rect2(c.x - rep_w * 0.5, rep_y, rep_w, 5.0), Color(0, 0, 0, 0.65), true)
+			draw_rect(Rect2(c.x - rep_w * 0.5, rep_y, rep_w * repeater_charge_ratio, 5.0), Color("#f59e0b"), true)
+
 		# 1d. Authentic Apex Shotgun Pellet Hit Grid Feedback (Star-11 / Line-8 / Fig8-8 / Triangle-3)
 		if pellet_timer > 0.0 and not last_pellet_hits.is_empty():
 			var p_alpha: float = clampf(pellet_timer / 0.55, 0.0, 1.0)
-			var pts: Array = GameData.get_pellet_pattern_offsets(last_pellet_pattern, last_pellet_hits.size())
+			var pts: Array = GameData.get_pellet_pattern_offsets(last_pellet_pattern, 1.0)
 			var grid_scale: float = 28.0
 			for pi in range(mini(pts.size(), last_pellet_hits.size())):
 				var p_off: Vector2 = pts[pi]
@@ -233,16 +249,26 @@ class ScopeAndHitHUD extends Control:
 			var htw: float = font.get_string_size(h_title, HORIZONTAL_ALIGNMENT_CENTER, -1, 14).x
 			draw_string(font, Vector2(ring_c.x - htw * 0.5, ring_c.y + 48.0), h_title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, h_col)
 
-		# 2. Center Hitmarker X Flash
+		# 2. Center Reticle Hitmarker X Flash & Instant Stacking Damage Number (matching image_0ab157.jpg!)
 		if hit_timer > 0.0:
-			var hm_col: Color = Color("#fde047") if last_is_head else tier_col
-			var d1: float = 7.0
-			var d2: float = 18.0 if last_is_head else 15.0
-			var w_hm: float = 3.0 if last_is_head else 2.2
-			draw_line(c + Vector2(-d2, -d2), c + Vector2(-d1, -d1), hm_col, w_hm)
-			draw_line(c + Vector2(d1, -d1), c + Vector2(d2, -d2), hm_col, w_hm)
-			draw_line(c + Vector2(-d2, d2), c + Vector2(-d1, d1), hm_col, w_hm)
-			draw_line(c + Vector2(d1, d1), c + Vector2(d2, d2), hm_col, w_hm)
+			var punch: float = (hit_timer / 0.24) * 4.0
+			var hm_col: Color = Color("#fde047") if last_is_head else Color("#ff2a2a")
+			var d1: float = 7.0 + punch * 0.5
+			var d2: float = (18.0 if last_is_head else 15.5) + punch
+			var w_hm: float = 3.2 if last_is_head else 2.5
+			var shadow_col := Color(0, 0, 0, 0.75)
+			for diag in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+				draw_line(c + diag * d2, c + diag * d1, shadow_col, w_hm + 1.8)
+				draw_line(c + diag * d2, c + diag * d1, hm_col, w_hm)
+
+		if dmg_timer > 0.0 and last_cum_dmg > 0 and font != null:
+			var d_alpha: float = clampf(dmg_timer / 0.45, 0.0, 1.0)
+			var d_pos := c + Vector2(32.0, -24.0)
+			var num_str := str(last_cum_dmg)
+			var num_col := Color("#fde047") if last_is_head else tier_col
+			num_col.a = d_alpha
+			draw_string(font, d_pos + Vector2(1.5, 1.5), num_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 24 if last_is_head else 21, Color(0, 0, 0, d_alpha * 0.9))
+			draw_string(font, d_pos, num_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 24 if last_is_head else 21, num_col)
 
 		# 3. Authentic Apex Broken Shield Crack Icon
 		if crack_timer > 0.0:
@@ -296,6 +322,79 @@ class ScopeAndHitHUD extends Control:
 				var t_pos := Vector2(sc.x - txt_sz * 0.5, sc.y + 36)
 				draw_string(font, t_pos + Vector2(1, 1), cr_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, f_sz, Color(0, 0, 0, cr_alpha * 0.8))
 				draw_string(font, t_pos, cr_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, f_sz, icon_col)
+
+		# 4. AUTHENTIC APEX LEGENDS KNOCKDOWN & DAMAGE INFLICTED PROMPT (Pixel-Accurate to image_0ab157.jpg!)
+		if knockdown_timer > 0.0 and font != null:
+			var kd_alpha: float = clampf(knockdown_timer / 0.45, 0.0, 1.0)
+			var pop_scale: float = 1.0
+			if knockdown_timer > 2.85:
+				pop_scale = lerpf(1.0, 1.18, (knockdown_timer - 2.85) / 0.25)
+
+			var kd_y: float = c.y + 128.0
+			var f1_sz: int = int(round(20.0 * pop_scale))
+			var f2_sz: int = int(round(15.0 * pop_scale))
+
+			var txt_prefix: String = "%s " % knockdown_label
+			var txt_victim: String = knockdown_victim.to_upper()
+			var txt_xp: String = " + %d" % knockdown_xp
+
+			var w_prefix: float = font.get_string_size(txt_prefix, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz).x
+			var w_victim: float = font.get_string_size(txt_victim, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz).x
+			var w_xp: float = font.get_string_size(txt_xp, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz).x
+			var w_icons: float = 42.0
+			var total_w1: float = w_prefix + w_victim + w_xp + w_icons
+			var start_x1: float = c.x - total_w1 * 0.5
+
+			var col_white := Color(1.0, 1.0, 1.0, kd_alpha)
+			var col_gold := Color(0.98, 0.78, 0.18, kd_alpha) # Authentic Apex Victim Name Gold (#fbbf24)
+			var col_shadow := Color(0.0, 0.0, 0.0, kd_alpha * 0.88)
+
+			# Line 1: KNOCKED DOWN [GOLD VICTIM NAME] + 150 [CHEVRON & KNOCKDOWN SHIELD ICONS]
+			draw_string(font, Vector2(start_x1 + 1.5, kd_y + 1.5), txt_prefix, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_shadow)
+			draw_string(font, Vector2(start_x1, kd_y), txt_prefix, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_white)
+
+			var vx: float = start_x1 + w_prefix
+			draw_string(font, Vector2(vx + 1.5, kd_y + 1.5), txt_victim, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_shadow)
+			draw_string(font, Vector2(vx, kd_y), txt_victim, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_gold)
+
+			var xx: float = vx + w_victim
+			draw_string(font, Vector2(xx + 1.5, kd_y + 1.5), txt_xp, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_shadow)
+			draw_string(font, Vector2(xx, kd_y), txt_xp, HORIZONTAL_ALIGNMENT_LEFT, -1, f1_sz, col_white)
+
+			# Draw Double-Chevron Rank Icon (`^` stacked) + Knockdown Shield Icon right next to `+ 150`
+			var ic_x: float = xx + w_xp + 12.0
+			var ic_y: float = kd_y - 7.0
+			# Double Chevron (`^`)
+			draw_line(Vector2(ic_x - 5, ic_y + 1), Vector2(ic_x, ic_y - 5), col_white, 2.2)
+			draw_line(Vector2(ic_x, ic_y - 5), Vector2(ic_x + 5, ic_y + 1), col_white, 2.2)
+			draw_line(Vector2(ic_x - 5, ic_y + 6), Vector2(ic_x, ic_y), col_white, 2.2)
+			draw_line(Vector2(ic_x, ic_y), Vector2(ic_x + 5, ic_y + 6), col_white, 2.2)
+			# Knockdown Shield / Downed Player Icon
+			var sh_x: float = ic_x + 17.0
+			var sh_pts := PackedVector2Array([
+				Vector2(sh_x, ic_y - 6),
+				Vector2(sh_x + 7, ic_y - 3),
+				Vector2(sh_x + 5, ic_y + 6),
+				Vector2(sh_x, ic_y + 9),
+				Vector2(sh_x - 5, ic_y + 6),
+				Vector2(sh_x - 7, ic_y - 3),
+				Vector2(sh_x, ic_y - 6)
+			])
+			draw_polyline(sh_pts, col_white, 2.0)
+
+			# Line 2: `100 DAMAGE INFLICTED` centered directly below Line 1
+			var kd_y2: float = kd_y + 24.0
+			var txt_dmg_num: String = "%d " % knockdown_dmg
+			var txt_dmg_lbl: String = "DAMAGE INFLICTED"
+			var w_dnum: float = font.get_string_size(txt_dmg_num, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz).x
+			var w_dlbl: float = font.get_string_size(txt_dmg_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz).x
+			var start_x2: float = c.x - (w_dnum + w_dlbl) * 0.5
+			var col_sub := Color(0.88, 0.92, 0.96, kd_alpha)
+
+			draw_string(font, Vector2(start_x2 + 1.2, kd_y2 + 1.2), txt_dmg_num, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz, col_shadow)
+			draw_string(font, Vector2(start_x2, kd_y2), txt_dmg_num, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz, col_white)
+			draw_string(font, Vector2(start_x2 + w_dnum + 1.2, kd_y2 + 1.2), txt_dmg_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz, col_shadow)
+			draw_string(font, Vector2(start_x2 + w_dnum, kd_y2), txt_dmg_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, f2_sz, col_sub)
 
 var player: PlayerController
 var weapon_ctrl: WeaponController
@@ -385,6 +484,7 @@ func _ready() -> void:
 	PlayerState.hit_feedback_pushed.connect(_on_hit_feedback_pushed)
 	PlayerState.shotgun_pellet_feedback_pushed.connect(_on_shotgun_pellet_feedback_pushed)
 	PlayerState.floating_damage_spawned.connect(_on_floating_damage_spawned)
+	PlayerState.enemy_knocked_down.connect(_on_enemy_knocked_down)
 	PlayerState.enemy_eliminated.connect(_on_enemy_eliminated)
 	PlayerState.deathbox_spawn_requested.connect(_on_deathbox_spawn_requested)
 	_refresh_hud()
@@ -418,7 +518,7 @@ func _spawn_enemies() -> void:
 		add_child(bot)
 		var evo_lv: int = tier_cycle[i % tier_cycle.size()]
 		var squad_id: int = (i / 3) + 2 if PlayerState.selected_mode_id != "firing_range" else 99
-		bot.setup(leg, pos, "%s #%d" % [str(leg["name"]), i + 1], evo_lv, squad_id)
+		bot.setup(leg, pos, "%s #%d" % [str(leg["en"]), i + 101], evo_lv, squad_id)
 		enemies.append(bot)
 
 func _is_key_just_pressed(k: int) -> bool:
@@ -489,7 +589,6 @@ func _process(delta: float) -> void:
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not PlayerState.ui_modal_open and not PlayerState.inventory_open:
 		if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 			if PlayerState.heal_cast_timer > 0.0:
-				# Firing cancels active consumable cast
 				PlayerState.heal_cast_timer = 0.0
 				_on_toast_pushed("⚠️ 开火打断了恢复品使用！", "warn")
 			else:
@@ -558,7 +657,7 @@ func _process(delta: float) -> void:
 		var hname: String = GameData.get_consumable_name(PlayerState.selected_heal_id)
 		var hcnt: int = int(PlayerState.consumables.get(PlayerState.selected_heal_id, 0))
 		PlayerState.state_updated.emit()
-		_on_toast_pushed("➕ 已切换恢复品槽位：【%s (剩余 x%d)】 (按 4 使用，带完整打药/打电动作)" % [hname, hcnt], "info")
+		_on_toast_pushed("➕ 已切换恢复品槽位：【%s (剩余 x%d)】 (按 4 使用，带完整收枪打药/打电动作)" % [hname, hcnt], "info")
 	elif _is_key_just_pressed(KEY_G):
 		ability_sys.throw_ordnance()
 	elif _is_key_just_pressed(KEY_E):
@@ -569,7 +668,6 @@ func _process(delta: float) -> void:
 		BehaviorRecorder.train_ai_from_records()
 		BehaviorRecorder.use_imitation_ai = true
 
-	# Hold E progress handling for deathbox
 	var near_it: Dictionary = _find_nearest_interactable()
 	if not near_it.is_empty() and str(near_it.get("type", "")) == "deathbox":
 		if Input.is_key_pressed(KEY_E):
@@ -623,13 +721,19 @@ func _try_interact() -> void:
 		var wep: Dictionary = GameData.get_weapon_by_id(wid)
 		var target_slot: int = 0 if PlayerState.active_slot == 2 else PlayerState.active_slot
 		PlayerState.active_slot = target_slot
+		var base_cap: int = GameData.get_weapon_mag_capacity(wid, 0)
 		PlayerState.loadout[target_slot] = {
 			"weapon_id": wid,
-			"ammo": int(wep["mag"]),
-			"max_ammo": int(wep["mag"]),
+			"ammo": base_cap,
+			"max_ammo": base_cap,
 			"optic": "6x_kraber" if str(wep["cat"]) == "SNIPER" else "2x_bruiser",
+			"barrel": 0,
+			"mag": 0,
+			"bolt": 0,
+			"stock": 0,
 			"charged": 0.0
 		}
+		PlayerState.recalculate_weapon_slot(target_slot, true)
 		weapon_ctrl.reload_timer = 0.0
 		player.rebuild_viewmodel()
 		AudioSynthesizer.play_reload_step("bolt_slap")
@@ -704,6 +808,7 @@ func _try_interact() -> void:
 			var old_wid: String = str(old_slot.get("weapon_id", "empty"))
 
 			PlayerState.loadout[target_slot] = w_dict.duplicate(true)
+			PlayerState.recalculate_weapon_slot(target_slot, true)
 			PlayerState.active_slot = target_slot
 
 			if old_wid != "empty" and old_wid != "":
@@ -719,6 +824,7 @@ func _try_interact() -> void:
 			player.rebuild_viewmodel()
 			AudioSynthesizer.play_reload_step("bolt_slap")
 			_on_toast_pushed("🔫 已拾取武器：【%s】！" % str(wep.get("name", wid)), "evo")
+			PlayerState.sync_ammo_reserve_from_inventory()
 			_refresh_hud()
 			return
 	elif itype == "dropped_attachment":
@@ -736,7 +842,11 @@ func _try_interact() -> void:
 			elif att_k != "optic" and int(cur_wep.get(att_k, 0)) < tier:
 				cur_wep[att_k] = tier
 				if att_k == "mag":
-					cur_wep["max_ammo"] = GameData.get_weapon_mag_capacity(str(cur_wep["weapon_id"]), tier)
+					cur_wep["mag_tier"] = tier
+					cur_wep["bolt"] = tier
+				elif att_k == "stock":
+					cur_wep["stock_tier"] = tier
+				PlayerState.recalculate_weapon_slot(cur_w_idx, true)
 				equipped = true
 
 		if not equipped:
@@ -755,95 +865,51 @@ func _try_interact() -> void:
 			best["node"].queue_free()
 		interactables.erase(best)
 		AudioSynthesizer.play_reload_step("lever_cock")
+		PlayerState.sync_ammo_reserve_from_inventory()
 		_refresh_hud()
 		return
 
 func _get_ammo_pickup_info(ammo_type: String) -> Dictionary:
 	match ammo_type:
 		"light":
-			return {
-				"id": "light",
-				"name": "轻型子弹",
-				"full_label": "轻型子弹 x60",
-				"count": 60,
-				"color": Color("#ea580c")
-			}
+			return {"id": "light", "name": "轻型子弹", "full_label": "轻型子弹 x60", "count": 60, "color": Color("#ea580c")}
 		"heavy":
-			return {
-				"id": "heavy",
-				"name": "重型子弹",
-				"full_label": "重型子弹 x60",
-				"count": 60,
-				"color": Color("#14b8a6")
-			}
+			return {"id": "heavy", "name": "重型子弹", "full_label": "重型子弹 x60", "count": 60, "color": Color("#14b8a6")}
 		"energy":
-			return {
-				"id": "energy",
-				"name": "能量子弹",
-				"full_label": "能量子弹 x60",
-				"count": 60,
-				"color": Color("#84cc16")
-			}
+			return {"id": "energy", "name": "能量子弹", "full_label": "能量子弹 x60", "count": 60, "color": Color("#84cc16")}
 		"shotgun":
-			return {
-				"id": "shotgun",
-				"name": "霰弹枪弹药",
-				"full_label": "霰弹枪弹药 x16",
-				"count": 16,
-				"color": Color("#ef4444")
-			}
+			return {"id": "shotgun", "name": "霰弹枪弹药", "full_label": "霰弹枪弹药 x16", "count": 16, "color": Color("#ef4444")}
 		"sniper":
-			return {
-				"id": "sniper",
-				"name": "狙击枪子弹",
-				"full_label": "狙击枪子弹 x28",
-				"count": 28,
-				"color": Color("#38bdf8")
-			}
+			return {"id": "sniper", "name": "狙击枪子弹", "full_label": "狙击枪子弹 x28", "count": 28, "color": Color("#38bdf8")}
 		"arrows":
-			return {
-				"id": "arrows",
-				"name": "箭矢",
-				"full_label": "箭矢 x32",
-				"count": 32,
-				"color": Color("#f59e0b")
-			}
+			return {"id": "arrows", "name": "箭矢", "full_label": "箭矢 x32", "count": 32, "color": Color("#f59e0b")}
 		_:
-			return {
-				"id": "light",
-				"name": "轻型子弹",
-				"full_label": "轻型子弹 x60",
-				"count": 60,
-				"color": Color("#ea580c")
-			}
+			return {"id": "light", "name": "轻型子弹", "full_label": "轻型子弹 x60", "count": 60, "color": Color("#ea580c")}
 
 func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
-	## Spawns 4 real interactive 3D pickupable items right on the Supply Bin's interior tray (y = 0.85)!
 	var tray_y: float = bin_pos.y + 0.85
 	var slot_offsets := [
-		Vector3(-0.92, tray_y, bin_pos.z + 0.08),
-		Vector3(-0.30, tray_y, bin_pos.z - 0.05),
-		Vector3(0.32, tray_y, bin_pos.z + 0.08),
-		Vector3(0.92, tray_y, bin_pos.z - 0.05)
+		Vector3(bin_pos.x - 0.92, tray_y, bin_pos.z + 0.08),
+		Vector3(bin_pos.x - 0.30, tray_y, bin_pos.z - 0.05),
+		Vector3(bin_pos.x + 0.32, tray_y, bin_pos.z + 0.08),
+		Vector3(bin_pos.x + 0.92, tray_y, bin_pos.z - 0.05)
 	]
-	slot_offsets[0].x += bin_pos.x
-	slot_offsets[1].x += bin_pos.x
-	slot_offsets[2].x += bin_pos.x
-	slot_offsets[3].x += bin_pos.x
 
 	if bin_type == "assault":
 		var assault_pool := ["r301", "flatline", "peacekeeper", "mastiff", "hemlok", "volt", "nemesis"]
 		var wid: String = assault_pool[randi() % assault_pool.size()]
 		var winfo: Dictionary = GameData.get_weapon_by_id(wid)
 		var a_info: Dictionary = _get_ammo_pickup_info(str(winfo.get("ammo", "light")))
+		var cap_m2: int = GameData.get_weapon_mag_capacity(wid, 2)
 
 		_spawn_dropped_weapon({
 			"weapon_id": wid,
-			"ammo": int(winfo["mag"]),
-			"max_ammo": int(winfo["mag"]),
+			"ammo": cap_m2,
+			"max_ammo": cap_m2,
 			"optic": "2x_bruiser",
 			"barrel": 2,
 			"mag": 2,
+			"bolt": 2,
 			"stock": 2,
 			"charged": 0.0
 		}, slot_offsets[0])
@@ -860,11 +926,12 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 		var wid: String = std_pool[randi() % std_pool.size()]
 		var winfo: Dictionary = GameData.get_weapon_by_id(wid)
 		var a_info: Dictionary = _get_ammo_pickup_info(str(winfo.get("ammo", "light")))
+		var cap_m0: int = GameData.get_weapon_mag_capacity(wid, 0)
 
 		_spawn_dropped_weapon({
 			"weapon_id": wid,
-			"ammo": int(winfo["mag"]),
-			"max_ammo": int(winfo["mag"]),
+			"ammo": cap_m0,
+			"max_ammo": cap_m0,
 			"optic": "1x_hcog",
 			"charged": 0.0
 		}, slot_offsets[0])
@@ -873,20 +940,20 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 		_spawn_3d_loot_pickup(slot_offsets[3], {"type": "consumable", "id": "syringe", "count": 4}, "注射器 x4", Color("#22c55e"))
 
 func _spawn_loot_tick_items(tick_pos: Vector3, rarity: int) -> void:
-	## Spawns 3 high-tier Gold / Mythic 3D items around an opened Loot Tick Robot!
 	var y_h: float = tick_pos.y + 0.45
 	var mythic_weps := ["kraber", "bocek", "peacekeeper", "devotion", "wingman"]
 	var wid: String = mythic_weps[randi() % mythic_weps.size()]
-	var winfo: Dictionary = GameData.get_weapon_by_id(wid)
+	var cap_m3: int = GameData.get_weapon_mag_capacity(wid, 3)
 
 	_spawn_3d_loot_pickup(tick_pos + Vector3(-0.85, 0.45, 0.45), {"type": "armor", "tier": rarity}, "Lv.%d 进化护盾核心" % rarity, Color("#ff1e42") if rarity >= 5 else Color("#fbbf24"))
 	_spawn_dropped_weapon({
 		"weapon_id": wid,
-		"ammo": int(winfo["mag"]),
-		"max_ammo": int(winfo["mag"]),
+		"ammo": cap_m3,
+		"max_ammo": cap_m3,
 		"optic": "6x_kraber" if wid == "kraber" else "2x_bruiser",
 		"barrel": 3,
 		"mag": 3,
+		"bolt": 3,
 		"stock": 3,
 		"charged": 0.0
 	}, Vector3(tick_pos.x, y_h, tick_pos.z + 0.75))
@@ -913,7 +980,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 	mat_dark.roughness = 0.3
 
 	if ltype == "ammo":
-		# 3D Apex Composite Ammo Crate with caliber-colored accent band and cartridge primers
 		var crate_m := MeshInstance3D.new()
 		var cm := BoxMesh.new()
 		cm.size = Vector3(0.24, 0.12, 0.16)
@@ -946,7 +1012,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 			node.add_child(tip_m)
 
 	elif ltype == "consumable" and lid == "syringe":
-		# 3D Auto-Injector Syringe
 		var body_m := MeshInstance3D.new()
 		var cym := CylinderMesh.new()
 		cym.top_radius = 0.032
@@ -980,7 +1045,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		node.add_child(needle_m)
 
 	elif ltype == "consumable" and lid == "med_kit":
-		# 3D Medical Case with glowing cross
 		var case_m := MeshInstance3D.new()
 		var cbm := BoxMesh.new()
 		cbm.size = Vector3(0.28, 0.20, 0.14)
@@ -1015,7 +1079,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		node.add_child(handle_m)
 
 	elif ltype == "consumable" and lid == "shield_cell":
-		# Mini Shield Cell Capacitor
 		var cell_m := MeshInstance3D.new()
 		var clm := CylinderMesh.new()
 		clm.top_radius = 0.075
@@ -1036,7 +1099,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		node.add_child(top_ring)
 
 	elif ltype == "consumable" and (lid == "shield_battery" or lid == "phoenix_kit"):
-		# Shield Battery / Phoenix Kit Turbine Capacitor
 		var cyl_m := MeshInstance3D.new()
 		var cm := CylinderMesh.new()
 		cm.top_radius = 0.10
@@ -1067,7 +1129,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		node.add_child(cap_bot)
 
 	elif ltype == "armor":
-		# 3D Hexagonal Armor Core
 		var core_m := MeshInstance3D.new()
 		var tm := TorusMesh.new()
 		tm.inner_radius = 0.14
@@ -1078,7 +1139,6 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		node.add_child(core_m)
 
 	else:
-		# Fallback composite crate
 		var box_m := MeshInstance3D.new()
 		var bm := BoxMesh.new()
 		bm.size = Vector3(0.24, 0.14, 0.18)
@@ -1102,7 +1162,7 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 	lbl.text = "[E] %s" % label_text
 	lbl.modulate = glow_col
 	lbl.position = Vector3(0, 0.36, 0)
-	lbl.visible = false # Invisible until focused by crosshair within 3.2m
+	lbl.visible = false
 	node.add_child(lbl)
 
 	interactables.append({
@@ -1134,7 +1194,6 @@ func _find_nearest_interactable() -> Dictionary:
 		if is_instance_valid(it_node):
 			item_pos = it_node.global_position
 
-		# Apply vertical centering offset based on interactable type
 		var vert_offset: float = 0.1
 		var max_dist: float = 3.2
 		var min_dot: float = 0.72
@@ -1169,10 +1228,9 @@ func _find_nearest_interactable() -> Dictionary:
 		if dot < min_dot:
 			continue
 
-		# Score heavily weights crosshair alignment (central focus) over distance
 		var score: float = dot * 10.0 - dist * 1.5
 		if t == "dropped_loot" or t == "dropped_weapon" or t == "dropped_attachment":
-			score += 1.5 # Slight priority when aiming into an opened bin with multiple items
+			score += 1.5
 
 		if score > best_score:
 			best_score = score
@@ -1373,7 +1431,7 @@ func _build_hud() -> void:
 func _on_hit_feedback_pushed(target_name: String, single_dmg: int, cumulative_dmg: int, is_headshot: bool, shield_tier: int, cracked_now: bool) -> void:
 	if scope_hit_hud == null:
 		return
-	scope_hit_hud.hit_timer = 0.22
+	scope_hit_hud.hit_timer = 0.24
 	scope_hit_hud.dmg_timer = 1.65
 	if cracked_now:
 		scope_hit_hud.crack_timer = 0.70
@@ -1400,9 +1458,9 @@ func _on_floating_damage_spawned(wpos: Vector3, dmg: int, is_headshot: bool, shi
 	lbl.no_depth_test = true
 	lbl.fixed_size = true
 	lbl.pixel_size = 0.00095
-	lbl.font_size = 28 if is_headshot else 24
-	lbl.outline_size = 3
-	lbl.outline_modulate = Color(0, 0, 0, 0.95)
+	lbl.font_size = 30 if is_headshot else 26
+	lbl.outline_size = 4
+	lbl.outline_modulate = Color(0, 0, 0, 0.96)
 	lbl.text = str(dmg)
 
 	var col: Color
@@ -1414,24 +1472,42 @@ func _on_floating_damage_spawned(wpos: Vector3, dmg: int, is_headshot: bool, shi
 		col = GameData.get_evo_tier(shield_tier)["color"]
 	lbl.modulate = col
 
-	var offset := Vector3(randf_range(0.25, 0.45), randf_range(0.20, 0.38), randf_range(-0.12, 0.12))
+	var offset := Vector3(randf_range(0.18, 0.42), randf_range(0.22, 0.40), randf_range(-0.10, 0.10))
 	lbl.position = wpos + offset
 	add_child(lbl)
 
 	var tw := lbl.create_tween()
 	tw.set_parallel(true)
-	tw.tween_property(lbl, "position", lbl.position + Vector3(randf_range(0.04, 0.12), 0.50, randf_range(-0.04, 0.04)), 0.60).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	lbl.scale = Vector3(1.15, 1.15, 1.15)
+	tw.tween_property(lbl, "position", lbl.position + Vector3(randf_range(0.04, 0.12), 0.52, randf_range(-0.04, 0.04)), 0.62).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	lbl.scale = Vector3(1.22, 1.22, 1.22)
 	tw.tween_property(lbl, "scale", Vector3(1.0, 1.0, 1.0), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(lbl, "modulate:a", 0.0, 0.22).set_delay(0.38)
+	tw.tween_property(lbl, "modulate:a", 0.0, 0.22).set_delay(0.40)
 	tw.chain().tween_callback(lbl.queue_free)
 
+func _on_enemy_knocked_down(victim_name: String, _weapon_name: String, damage_inflicted: int, xp_bonus: int) -> void:
+	if scope_hit_hud == null:
+		return
+	scope_hit_hud.knockdown_timer = 3.10
+	scope_hit_hud.knockdown_label = "KNOCKED DOWN"
+	scope_hit_hud.knockdown_victim = victim_name
+	scope_hit_hud.knockdown_xp = xp_bonus
+	scope_hit_hud.knockdown_dmg = damage_inflicted
+	scope_hit_hud.queue_redraw()
+
 func _on_enemy_eliminated(victim_name: String, weapon_name: String, total_kills: int) -> void:
+	if scope_hit_hud != null and scope_hit_hud.knockdown_timer <= 0.0:
+		scope_hit_hud.knockdown_timer = 3.10
+		scope_hit_hud.knockdown_label = "KNOCKED DOWN"
+		scope_hit_hud.knockdown_victim = victim_name
+		scope_hit_hud.knockdown_xp = 150
+		scope_hit_hud.knockdown_dmg = maxi(100, scope_hit_hud.last_cum_dmg)
+		scope_hit_hud.queue_redraw()
+
 	if kill_banner == null:
 		return
 	kill_banner.visible = true
-	kill_banner_title.text = "💀 你 消 灭 了 【%s】" % victim_name
-	kill_banner_sub.text = "🔫 击杀武器：%s   |   💀 个人总击杀：%d" % [weapon_name, total_kills]
+	kill_banner_title.text = "💀 击 倒 并 淘 汰 了 【%s】" % victim_name
+	kill_banner_sub.text = "🔫 武器：%s   |   💀 个人总淘汰：%d" % [weapon_name, total_kills]
 
 	if kill_banner_tween and kill_banner_tween.is_valid():
 		kill_banner_tween.kill()
@@ -1494,6 +1570,7 @@ func _update_realtime_hud() -> void:
 		scope_hit_hud.is_threat_locked = locked_threat
 		scope_hit_hud.bow_draw_ratio = weapon_ctrl.bow_draw_progress
 		scope_hit_hud.choke_ratio = weapon_ctrl.choke_progress
+		scope_hit_hud.repeater_charge_ratio = weapon_ctrl.repeater_charge
 
 		if scope_hit_hud.is_ads != want_ads or scope_hit_hud.optic_id != cur_op or scope_hit_hud.alt_zoom != PlayerState.scope_alt_zoom:
 			scope_hit_hud.is_ads = want_ads
@@ -1686,6 +1763,8 @@ func _on_deathbox_spawn_requested(pos: Vector3, bot_name: String, evo_tier: int,
 	var sample_weap_ids := ["flatline", "peacekeeper", "wingman", "r301", "mastiff", "volt", "bocek", "eva8", "prowler", "hemlok"]
 	var db_wep_id: String = sample_weap_ids[randi() % sample_weap_ids.size()]
 	var db_wep_info: Dictionary = GameData.get_weapon_by_id(db_wep_id)
+	var db_mag_tier: int = randi_range(2, 3)
+	var db_cap: int = GameData.get_weapon_mag_capacity(db_wep_id, db_mag_tier)
 
 	var dbox_items := [
 		{
@@ -1693,14 +1772,15 @@ func _on_deathbox_spawn_requested(pos: Vector3, bot_name: String, evo_tier: int,
 			"id": db_wep_id,
 			"name": str(db_wep_info.get("name", db_wep_id)),
 			"count": 1,
-			"ammo": int(db_wep_info.get("mag", 20)),
+			"ammo": db_cap,
 			"weapon_data": {
 				"weapon_id": db_wep_id,
-				"ammo": int(db_wep_info.get("mag", 20)),
-				"max_ammo": int(db_wep_info.get("mag", 20)),
+				"ammo": db_cap,
+				"max_ammo": db_cap,
 				"optic": "2x_bruiser",
 				"barrel": randi_range(2, 3),
-				"mag": randi_range(2, 3),
+				"mag": db_mag_tier,
+				"bolt": db_mag_tier,
 				"stock": randi_range(2, 3),
 				"hopup": "",
 				"charged": 0.0
@@ -1756,7 +1836,6 @@ func _spawn_dropped_weapon(weapon_dict: Dictionary, spawn_pos: Vector3) -> void:
 	root_wep.position = spawn_pos
 	add_child(root_wep)
 
-	# Use actual 3D WeaponMeshBuilder model scaled for ground / bin tray display!
 	var preview_rig := WeaponMeshBuilder.create_viewmodel(wep_info, false, {}, str(weapon_dict.get("optic", "2x_bruiser")))
 	preview_rig.position = Vector3.ZERO
 	preview_rig.scale = Vector3(0.85, 0.85, 0.85)
@@ -1891,7 +1970,7 @@ func _run_inventory_diagnostics() -> void:
 	print("[2] Verifying Weapon Reload & Backpack Deduction Linkage:")
 	PlayerState.active_slot = 1 # R-301
 	var slot1: Dictionary = PlayerState.loadout[1]
-	slot1["ammo"] = 0 # Simulate empty mag
+	slot1["ammo"] = 0
 	var needed: int = int(slot1["max_ammo"]) - int(slot1["ammo"])
 	var loaded: int = PlayerState.deduct_ammo("light", needed)
 	slot1["ammo"] += loaded
@@ -1974,7 +2053,6 @@ func _run_inventory_diagnostics() -> void:
 
 	# 5. Test Categorized Ammo & Crosshair Focus Item Visibility
 	print("[5] Verifying Categorized Ammo & Crosshair Focus Item Visibility:")
-	# A. Ammo pickup info
 	var info_light := _get_ammo_pickup_info("light")
 	var info_shotgun := _get_ammo_pickup_info("shotgun")
 	var info_sniper := _get_ammo_pickup_info("sniper")
@@ -1985,14 +2063,12 @@ func _run_inventory_diagnostics() -> void:
 	assert(info_arrows["full_label"] == "箭矢 x32" and info_arrows["count"] == 32)
 	print("  Categorized ammo info: Light(60), Shotgun(16), Sniper(28), Arrows(32) - OK")
 
-	# B. Test adding authentic stack
 	var pre_shotgun: int = int(PlayerState.ammo_reserve.get("shotgun", 0))
 	PlayerState.add_loot_item({"type": "ammo", "id": "shotgun", "count": 16})
 	var post_shotgun: int = int(PlayerState.ammo_reserve.get("shotgun", 0))
 	print("  Added Shotgun ammo x16: reserve %d -> %d" % [pre_shotgun, post_shotgun])
 	assert(post_shotgun == pre_shotgun + 16)
 
-	# C. Test 3D Loot Item default invisible and focus activation
 	var test_loot_pos := player.camera.global_position + (-player.camera.global_transform.basis.z * 1.5)
 	_spawn_3d_loot_pickup(test_loot_pos, {"type": "ammo", "id": "light", "count": 60}, "轻型子弹 x60", Color("#ea580c"))
 	var spawned_item: Dictionary = interactables[interactables.size() - 1]
@@ -2001,18 +2077,15 @@ func _run_inventory_diagnostics() -> void:
 	assert(item_lbl.visible == false, "ItemLabel3D must be INVISIBLE by default")
 	print("  Spawned 3D loot pickup label default invisible: OK")
 
-	# D. Simulate crosshair focus within interaction range
 	_update_realtime_hud()
 	assert(item_lbl.visible == true, "ItemLabel3D must become VISIBLE when crosshair is focused on it")
 	print("  Crosshair focused on item: ItemLabel3D turned VISIBLE - OK")
 
-	# E. Simulate looking away
-	player.camera.global_transform.basis = Basis(Vector3.UP, PI) # Look 180 degrees away
+	player.camera.global_transform.basis = Basis(Vector3.UP, PI)
 	_update_realtime_hud()
 	assert(item_lbl.visible == false, "ItemLabel3D must HIDE when looking away from item")
 	print("  Turned 180 degrees away: ItemLabel3D HIDDEN - OK")
 
-	# Clean up test loot
 	spawned_item["node"].queue_free()
 	interactables.erase(spawned_item)
 	print("  -> Categorized Ammo & Crosshair Focus Item Visibility test PASSED!")
@@ -2031,7 +2104,6 @@ func _run_victory_diagnostics() -> void:
 	assert(PlayerState.squads_alive == 20, "Must be 20 squads")
 	assert(PlayerState.players_alive == 60, "Must be 60 players")
 
-	# Verify spawned bots
 	print("Enemies spawned: %d" % enemies.size())
 	assert(enemies.size() == 21, "Must spawn 21 bots")
 	var sq_map: Dictionary = {}
@@ -2042,11 +2114,9 @@ func _run_victory_diagnostics() -> void:
 	for s in sq_map:
 		assert(sq_map[s] == 3, "Each squad must have 3 bots")
 
-	# Test simulated skirmish
 	_push_simulated_skirmish()
 	print("Simulated skirmish successfully pushed!")
 
-	# Trigger Victory
 	_trigger_victory_screen()
 	print("After victory trigger:")
 	print("  PlayerState.match_ended: ", PlayerState.match_ended)
@@ -2068,7 +2138,6 @@ func _run_storm_escape_diagnostics() -> void:
 	var bot: ApexBotAI = enemies[0]
 	assert(is_instance_valid(bot))
 
-	# Test 1: Place bot outside current ring and verify ESCAPE_STORM transition
 	print("[TEST 1] AI Storm Escape State Transition:")
 	PlayerState.selected_mode_id = "br_trios"
 	PlayerState.ring_radius = 100.0
@@ -2081,7 +2150,6 @@ func _run_storm_escape_diagnostics() -> void:
 	assert(bot.ai_state == "ESCAPE_STORM")
 	print("  -> Passed!")
 
-	# Test 2: Verify movement direction points toward safe center (origin)
 	print("\n[TEST 2] AI Safe Zone Relocation Velocity:")
 	for step in range(15):
 		bot._physics_process(0.016)
@@ -2090,7 +2158,6 @@ func _run_storm_escape_diagnostics() -> void:
 	assert(bot.velocity.length() > 8.0, "Sprint velocity must be high speed")
 	print("  -> Passed!")
 
-	# Test 3: Storm Radiation Damage
 	print("\n[TEST 3] Storm Radiation Flesh Damage:")
 	var initial_hp: float = bot.hp
 	var initial_shield: float = bot.shield
@@ -2100,7 +2167,6 @@ func _run_storm_escape_diagnostics() -> void:
 	assert(bot.shield == initial_shield, "Storm damage must bypass shields")
 	print("  -> Passed!")
 
-	# Test 4: Re-entering safe zone transitions back to STRAFE_DUEL and re-anchors
 	print("\n[TEST 4] Safe Zone Arrival & Re-anchoring:")
 	bot.global_position = Vector3(20.0, 0.0, 0.0)
 	bot._physics_process(0.016)
@@ -2109,7 +2175,6 @@ func _run_storm_escape_diagnostics() -> void:
 	assert(bot.spawn_origin.distance_to(Vector3(20.0, 0.0, 0.0)) < 0.1, "Spawn origin must be re-anchored")
 	print("  -> Passed!")
 
-	# Test 5: Storm Radiation Elimination
 	print("\n[TEST 5] Storm Radiation Elimination:")
 	bot.hp = 5.0
 	bot.apply_storm_damage(10.0)

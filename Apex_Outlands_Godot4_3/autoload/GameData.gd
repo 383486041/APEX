@@ -1,10 +1,10 @@
 extends Node
 ## GameData Autoload Singleton
-## Authentic Apex Legends Database:
+## Authentic Apex Legends Database (Godot 4.3 Optimized Edition):
 ## - 5 Classes & 12 Playable Legends
 ## - 28 Authentic Weapons across all 7 official Apex Categories (AR, SMG, LMG, MARKSMAN, SNIPER, SHOTGUN, PISTOL)
-## - Authentic Ballistic Stats (Body/Head/Leg multipliers, RPM, Mag Tiers, Tactical/Empty Reloads, Projectile Speed, Gravity, ADS Move Scale)
-## - Deterministic Shotgun & Multi-Pellet Spread Patterns (Peacekeeper 11-pellet Star, Mastiff 8-pellet Horizontal Line, EVA-8 8-pellet Figure-8, Mozambique 3-pellet Triangle, Triple Take 3-bolt, Bocek Shatter Caps 7-pellet)
+## - High-Impact Calibrated Ballistic Stats (Boosted Body/Head/Leg damage, RPM, Mag Tiers, Tactical/Empty Reloads, Shotgun Bolt multipliers)
+## - Unit-Normalized Deterministic Shotgun & Multi-Pellet Spread Patterns (Peacekeeper 11-pellet Star, Mastiff 8-pellet Horizontal Line, EVA-8 8-pellet Figure-8, Mozambique 3-pellet Triangle, Triple Take 3-bolt, Bocek Shatter Caps 7-pellet)
 
 const CLASSES: Dictionary = {
 	"ASSAULT": {
@@ -53,7 +53,7 @@ const LEGENDS: Array = [
 	{
 		"id": "wraith", "name": "恶灵", "en": "WRAITH", "title": "跨维度决斗者", "class_id": "SKIRMISHER",
 		"primary_color": Color("#312e81"), "secondary_color": Color("#93c5fd"), "visor_color": Color("#c4b5fd"),
-		"scale": Vector3(0.9, 0.95, 0.9),
+		"scale": Vector3(0.92, 0.96, 0.92),
 		"heirloom": {"name": "希望之暮（苦无 Kunai）", "color": Color("#8b5cf6")},
 		"passive_name": "魔音传脑", "passive_desc": "被瞄准、附近存在毒气陷阱或敌队密集时，虚空之声自动发出方位预警。",
 		"tac_name": "踏入虚空", "tac_cd": 20.0, "tac_desc": "0.4秒蓄力后进入虚空通道 4 秒，免疫一切伤害并提升 30% 移速。",
@@ -70,7 +70,7 @@ const LEGENDS: Array = [
 	{
 		"id": "octane", "name": "动力小子", "en": "OCTANE", "title": "高速特技狂人", "class_id": "SKIRMISHER",
 		"primary_color": Color("#365314"), "secondary_color": Color("#22c55e"), "visor_color": Color("#84cc16"),
-		"scale": Vector3(0.92, 0.96, 0.92),
+		"scale": Vector3(0.94, 0.97, 0.94),
 		"heirloom": {"name": "辛烷蝴蝶刀（Butterfly Knife）", "color": Color("#22c55e")},
 		"passive_name": "高速修复", "passive_desc": "脱离受击后每秒自动恢复 3.0 点生命值。",
 		"tac_name": "兴奋剂", "tac_cd": 2.0, "tac_desc": "消耗 15 点生命值注射兴奋剂，6 秒内冲刺速度提升 35% 并免疫减速。",
@@ -104,7 +104,7 @@ const LEGENDS: Array = [
 	{
 		"id": "pathfinder", "name": "探路者", "en": "PATHFINDER", "title": "前方侦察马文", "class_id": "SKIRMISHER",
 		"primary_color": Color("#0369a1"), "secondary_color": Color("#7dd3fc"), "visor_color": Color("#facc15"),
-		"scale": Vector3(1.02, 1.06, 1.02),
+		"scale": Vector3(1.02, 1.05, 1.02),
 		"heirloom": {"name": "拳击手套（Boxing Gloves）", "color": Color("#38bdf8")},
 		"passive_name": "内线情报", "passive_desc": "扫描信标立即刷新滑索枪并缩短冷却。",
 		"tac_name": "钩爪", "tac_cd": 16.0, "tac_desc": "向准星瞄准的建筑或地形发射真实物理钢缆抓钩，执行大摆锤弧线飞跃。",
@@ -121,7 +121,7 @@ const LEGENDS: Array = [
 	{
 		"id": "lifeline", "name": "命脉", "en": "LIFELINE", "title": "战地重装医疗兵", "class_id": "SUPPORT",
 		"primary_color": Color("#be185d"), "secondary_color": Color("#f8fafc"), "visor_color": Color("#2dd4bf"),
-		"scale": Vector3(0.9, 0.94, 0.9),
+		"scale": Vector3(0.92, 0.95, 0.92),
 		"heirloom": {"name": "电击鼓槌（Shock Sticks）", "color": Color("#ec4899")},
 		"passive_name": "战斗医疗兵 & 滑翔", "passive_desc": "部署 D.O.C. 自动扶人并可在空中长按跳跃借助无人机滑翔。",
 		"tac_name": "D.O.C. 治疗无人机", "tac_cd": 22.0, "tac_desc": "召唤跟随队友治疗的慈悲无人机，持续恢复周围友军生命值。",
@@ -138,7 +138,7 @@ const LEGENDS: Array = [
 	{
 		"id": "gibraltar", "name": "直布罗陀", "en": "GIBRALTAR", "title": "移动钢铁堡垒", "class_id": "SUPPORT",
 		"primary_color": Color("#9a3412"), "secondary_color": Color("#fb923c"), "visor_color": Color("#38bdf8"),
-		"scale": Vector3(1.22, 1.12, 1.22),
+		"scale": Vector3(1.18, 1.10, 1.18),
 		"heirloom": {"name": "战斧火炬（War Club）", "color": Color("#f97316")},
 		"passive_name": "枪盾 & 强化装甲", "passive_desc": "开镜展开 50 HP 能量臂盾阻挡正面子弹，全身减伤 15% 且免疫中弹减速。",
 		"tac_name": "保护圆顶", "tac_cd": 24.0, "tac_desc": "投掷 6.5m 圆顶能量力场阻挡一切内外子弹与轰炸 12 秒，罩内打药加速。",
@@ -172,7 +172,7 @@ const LEGENDS: Array = [
 	{
 		"id": "ash", "name": "艾许", "en": "ASH", "title": "冷血拟像刺客", "class_id": "ASSAULT",
 		"primary_color": Color("#1e293b"), "secondary_color": Color("#06b6d4"), "visor_color": Color("#f43f5e"),
-		"scale": Vector3(0.9, 0.98, 0.9),
+		"scale": Vector3(0.92, 0.98, 0.92),
 		"heirloom": {"name": "最强之刃（Strongest Link 双节刀）", "color": Color("#06b6d4")},
 		"passive_name": "死神烙印", "passive_desc": "洞察全图死亡之箱并扫描幸存敌队。",
 		"tac_name": "电弧陷阱", "tac_cd": 18.0, "tac_desc": "掷出旋转电弧飞盘造成 25 点电击伤害并将范围内敌人强行束缚。",
@@ -189,7 +189,7 @@ const LEGENDS: Array = [
 	{
 		"id": "horizon", "name": "地平线", "en": "HORIZON", "title": "引力天体物理学家", "class_id": "SKIRMISHER",
 		"primary_color": Color("#1d4ed8"), "secondary_color": Color("#f97316"), "visor_color": Color("#93c5fd"),
-		"scale": Vector3(0.92, 0.98, 0.92),
+		"scale": Vector3(0.93, 0.98, 0.93),
 		"heirloom": {"name": "引力大锤（Gravity Maw）", "color": Color("#3b82f6")},
 		"passive_name": "太空步", "passive_desc": "消除高空坠落硬直并大幅强化空中变向控制。",
 		"tac_name": "重力电梯", "tac_cd": 20.0, "tac_desc": "生成 18m 垂直反重力上升气流托举小队升空并支持顶部悬浮射击。",
@@ -206,7 +206,7 @@ const LEGENDS: Array = [
 	{
 		"id": "valkyrie", "name": "瓦尔基里", "en": "VALKYRIE", "title": "有翼天际复仇女神", "class_id": "RECON",
 		"primary_color": Color("#b45309"), "secondary_color": Color("#6d28d9"), "visor_color": Color("#38bdf8"),
-		"scale": Vector3(0.92, 0.97, 0.92),
+		"scale": Vector3(0.93, 0.97, 0.93),
 		"heirloom": {"name": "朱雀战矛（Suzaku）", "color": Color("#f59e0b")},
 		"passive_name": "VTOL 喷气背包", "passive_desc": "空中按跳跃启动喷气背包悬停飞行，跳伞自动扫描地面敌军。",
 		"tac_name": "导弹群", "tac_cd": 22.0, "tac_desc": "肩部发射 12 枚微型制导火箭弹覆盖目标网格造成轰炸伤害与眩晕。",
@@ -223,7 +223,7 @@ const LEGENDS: Array = [
 	{
 		"id": "caustic", "name": "侵蚀", "en": "CAUSTIC", "title": "剧毒捕猎科学家", "class_id": "CONTROLLER",
 		"primary_color": Color("#3f6212"), "secondary_color": Color("#eab308"), "visor_color": Color("#84cc16"),
-		"scale": Vector3(1.16, 1.08, 1.16),
+		"scale": Vector3(1.14, 1.06, 1.14),
 		"heirloom": {"name": "死亡之锤（Death Hammer）", "color": Color("#84cc16")},
 		"passive_name": "夜神视线 & 强化装甲", "passive_desc": "透视高亮毒气内敌人，全身减伤 15% 且免疫中弹减速。",
 		"tac_name": "夜神毒气陷阱", "tac_cd": 16.0, "tac_desc": "放置充气毒气罐，敌方靠近时触发释放持续腐蚀生命的剧毒绿雾。",
@@ -257,321 +257,321 @@ const LEGENDS: Array = [
 ]
 
 ## Complete 28 Authentic Apex Legends Weapons (7 Categories: AR, SMG, LMG, MARKSMAN, SNIPER, SHOTGUN, PISTOL)
-## All damage, head/leg multipliers, RPM, magazine tiers, reload speeds, and pellet patterns match official Apex Legends stats.
+## Damage, headshot multipliers, RPM, magazine capacities, and spread have been tuned for punchy, authentic Apex combat feel.
 const WEAPONS: Array = [
 	# ==================== 1. ASSAULT RIFLES (AR - 突击步枪, ADS移速 0.50x) ====================
 	{
 		"id": "r301", "name": "R-301 卡宾枪", "en": "R-301 Carbine", "cat": "AR", "ammo": "light",
-		"rpm": 810.0, "dmg": 13, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"mag": 18, "mag_tiers": [18, 20, 25, 28], "reload": 2.40, "reload_empty": 3.20,
+		"rpm": 810.0, "dmg": 15, "head": 1.75, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"mag": 18, "mag_tiers": [18, 20, 25, 28], "reload": 2.20, "reload_empty": 2.90,
 		"reload_style": "ar_tactical", "archetype": "ar_carbine",
 		"rec_len": 0.48, "barrel_len": 0.38, "mag_curve": 0.22, "stock_type": "crane",
-		"spread": 0.010, "ads_spread": 0.0012, "ads_move_scale": 0.50,
-		"recoil_v": 0.011, "recoil_h": 0.004, "proj_speed": 290.0, "grav_scale": 1.0,
+		"spread": 0.0085, "ads_spread": 0.0008, "ads_move_scale": 0.50,
+		"recoil_v": 0.010, "recoil_h": 0.0035, "proj_speed": 295.0, "grav_scale": 1.0,
 		"fire_modes": ["auto", "single"], "color": Color("#06b6d4"), "accent": Color("#8b5cf6")
 	},
 	{
 		"id": "flatline", "name": "VK-47 平行步枪", "en": "VK-47 Flatline", "cat": "AR", "ammo": "heavy",
-		"rpm": 600.0, "dmg": 18, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"mag": 20, "mag_tiers": [20, 25, 28, 30], "reload": 2.40, "reload_empty": 3.10,
+		"rpm": 600.0, "dmg": 19, "head": 1.75, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"mag": 20, "mag_tiers": [20, 25, 28, 30], "reload": 2.30, "reload_empty": 2.95,
 		"reload_style": "bullpup", "archetype": "bullpup_ar",
 		"rec_len": 0.52, "barrel_len": 0.30, "mag_curve": 0.28, "stock_type": "bullpup",
-		"spread": 0.013, "ads_spread": 0.0020, "ads_move_scale": 0.50,
-		"recoil_v": 0.015, "recoil_h": 0.009, "proj_speed": 240.0, "grav_scale": 1.15,
+		"spread": 0.010, "ads_spread": 0.0014, "ads_move_scale": 0.50,
+		"recoil_v": 0.013, "recoil_h": 0.007, "proj_speed": 250.0, "grav_scale": 1.10,
 		"fire_modes": ["auto", "single"], "color": Color("#2e3440"), "accent": Color("#14b8a6")
 	},
 	{
 		"id": "hemlok", "name": "赫姆洛克连发步枪", "en": "Hemlok Burst AR", "cat": "AR", "ammo": "heavy",
-		"rpm": 640.0, "dmg": 21, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"burst_count": 3, "burst_delay": 0.24,
-		"mag": 18, "mag_tiers": [18, 24, 27, 30], "reload": 2.40, "reload_empty": 2.85,
+		"rpm": 640.0, "dmg": 22, "head": 1.80, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"burst_count": 3, "burst_delay": 0.22,
+		"mag": 18, "mag_tiers": [18, 24, 27, 30], "reload": 2.25, "reload_empty": 2.70,
 		"reload_style": "ar_tactical", "archetype": "burst_ar",
 		"rec_len": 0.50, "barrel_len": 0.40, "mag_curve": 0.20, "stock_type": "heavy",
-		"spread": 0.011, "ads_spread": 0.0014, "ads_move_scale": 0.50,
-		"recoil_v": 0.014, "recoil_h": 0.005, "proj_speed": 275.0, "grav_scale": 1.05,
+		"spread": 0.009, "ads_spread": 0.0010, "ads_move_scale": 0.50,
+		"recoil_v": 0.012, "recoil_h": 0.004, "proj_speed": 280.0, "grav_scale": 1.05,
 		"fire_modes": ["burst", "single"], "color": Color("#1e293b"), "accent": Color("#14b8a6")
 	},
 	{
 		"id": "nemesis", "name": "复仇女神连发步枪", "en": "Nemesis Burst AR", "cat": "AR", "ammo": "energy",
-		"rpm": 660.0, "dmg": 16, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"burst_count": 4, "burst_delay": 0.22,
-		"mag": 20, "mag_tiers": [20, 24, 28, 32], "reload": 2.70, "reload_empty": 2.70,
+		"rpm": 660.0, "dmg": 18, "head": 1.75, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"burst_count": 4, "burst_delay": 0.20,
+		"mag": 20, "mag_tiers": [20, 24, 28, 32], "reload": 2.45, "reload_empty": 2.45,
 		"reload_style": "energy_cell", "archetype": "energy_ar",
 		"rec_len": 0.54, "barrel_len": 0.42, "mag_curve": 0.0, "stock_type": "heavy",
-		"spread": 0.010, "ads_spread": 0.0012, "ads_move_scale": 0.50,
-		"recoil_v": 0.012, "recoil_h": 0.004, "proj_speed": 310.0, "grav_scale": 0.85,
+		"spread": 0.0085, "ads_spread": 0.0010, "ads_move_scale": 0.50,
+		"recoil_v": 0.011, "recoil_h": 0.0035, "proj_speed": 315.0, "grav_scale": 0.85,
 		"fire_modes": ["burst"], "color": Color("#1e293b"), "accent": Color("#84cc16")
 	},
 	{
 		"id": "havoc", "name": "哈沃克步枪", "en": "HAVOC Rifle", "cat": "AR", "ammo": "energy",
-		"rpm": 672.0, "dmg": 18, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"windup_time": 0.36,
-		"mag": 24, "mag_tiers": [24, 28, 32, 36], "reload": 3.20, "reload_empty": 3.20,
+		"rpm": 672.0, "dmg": 20, "head": 1.75, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"windup_time": 0.32,
+		"mag": 24, "mag_tiers": [24, 28, 32, 36], "reload": 2.90, "reload_empty": 2.90,
 		"reload_style": "energy_cell", "archetype": "energy_ar",
 		"rec_len": 0.50, "barrel_len": 0.36, "mag_curve": 0.0, "stock_type": "heavy",
-		"spread": 0.013, "ads_spread": 0.0020, "ads_move_scale": 0.50,
-		"recoil_v": 0.016, "recoil_h": 0.006, "proj_speed": 305.0, "grav_scale": 0.85,
+		"spread": 0.011, "ads_spread": 0.0016, "ads_move_scale": 0.50,
+		"recoil_v": 0.014, "recoil_h": 0.005, "proj_speed": 310.0, "grav_scale": 0.85,
 		"fire_modes": ["auto"], "color": Color("#475569"), "accent": Color("#a3e635")
 	},
 
 	# ==================== 2. SUBMACHINE GUNS (SMG - 冲锋枪, ADS移速 0.75x) ====================
 	{
 		"id": "r99", "name": "R-99 冲锋枪", "en": "R-99 SMG", "cat": "SMG", "ammo": "light",
-		"rpm": 1080.0, "dmg": 11, "head": 1.50, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"mag": 17, "mag_tiers": [17, 20, 23, 26], "reload": 1.80, "reload_empty": 2.45,
+		"rpm": 1080.0, "dmg": 13, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 20, "mag_tiers": [20, 22, 25, 28], "reload": 1.65, "reload_empty": 2.20,
 		"reload_style": "smg_fast", "archetype": "compact_smg",
 		"rec_len": 0.34, "barrel_len": 0.22, "mag_curve": 0.15, "stock_type": "wire",
-		"spread": 0.015, "ads_spread": 0.0030, "ads_move_scale": 0.75,
-		"recoil_v": 0.014, "recoil_h": 0.007, "proj_speed": 210.0, "grav_scale": 1.1,
+		"spread": 0.012, "ads_spread": 0.0022, "ads_move_scale": 0.75,
+		"recoil_v": 0.012, "recoil_h": 0.0055, "proj_speed": 225.0, "grav_scale": 1.05,
 		"fire_modes": ["auto"], "color": Color("#94a3b8"), "accent": Color("#f97316")
 	},
 	{
 		"id": "volt", "name": "电能冲锋枪", "en": "Volt SMG", "cat": "SMG", "ammo": "energy",
-		"rpm": 720.0, "dmg": 15, "head": 1.50, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"mag": 19, "mag_tiers": [19, 21, 23, 26], "reload": 1.44, "reload_empty": 2.03,
+		"rpm": 720.0, "dmg": 17, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 19, "mag_tiers": [19, 21, 24, 27], "reload": 1.40, "reload_empty": 1.95,
 		"reload_style": "energy_cell", "archetype": "energy_smg",
 		"rec_len": 0.38, "barrel_len": 0.25, "mag_curve": 0.08, "stock_type": "crane",
-		"spread": 0.011, "ads_spread": 0.0018, "ads_move_scale": 0.75,
-		"recoil_v": 0.011, "recoil_h": 0.004, "proj_speed": 220.0, "grav_scale": 0.9,
+		"spread": 0.009, "ads_spread": 0.0014, "ads_move_scale": 0.75,
+		"recoil_v": 0.010, "recoil_h": 0.0035, "proj_speed": 240.0, "grav_scale": 0.90,
 		"fire_modes": ["auto"], "color": Color("#f8fafc"), "accent": Color("#38bdf8")
 	},
 	{
 		"id": "car", "name": "C.A.R. 冲锋枪", "en": "C.A.R. SMG", "cat": "SMG", "ammo": "heavy",
 		"secondary_ammo": "light",
-		"rpm": 930.0, "dmg": 12, "head": 1.50, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"mag": 19, "mag_tiers": [19, 21, 23, 26], "reload": 1.70, "reload_empty": 2.13,
+		"rpm": 930.0, "dmg": 14, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 20, "mag_tiers": [20, 22, 25, 28], "reload": 1.60, "reload_empty": 2.00,
 		"reload_style": "smg_fast", "archetype": "compact_smg",
 		"rec_len": 0.36, "barrel_len": 0.23, "mag_curve": 0.20, "stock_type": "crane",
-		"spread": 0.014, "ads_spread": 0.0028, "ads_move_scale": 0.75,
-		"recoil_v": 0.014, "recoil_h": 0.007, "proj_speed": 185.0, "grav_scale": 1.15,
+		"spread": 0.011, "ads_spread": 0.0020, "ads_move_scale": 0.75,
+		"recoil_v": 0.012, "recoil_h": 0.0055, "proj_speed": 210.0, "grav_scale": 1.10,
 		"fire_modes": ["auto"], "color": Color("#334155"), "accent": Color("#f59e0b")
 	},
 	{
 		"id": "prowler", "name": "猎兽冲锋枪", "en": "Prowler Burst PDW", "cat": "SMG", "ammo": "heavy",
-		"rpm": 795.0, "dmg": 16, "head": 1.50, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"burst_count": 5, "burst_delay": 0.21,
-		"mag": 20, "mag_tiers": [20, 25, 30, 35], "reload": 1.80, "reload_empty": 2.34,
+		"rpm": 820.0, "dmg": 17, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"burst_count": 5, "burst_delay": 0.19,
+		"mag": 20, "mag_tiers": [20, 25, 30, 35], "reload": 1.70, "reload_empty": 2.15,
 		"reload_style": "bullpup", "archetype": "bullpup_smg",
 		"rec_len": 0.42, "barrel_len": 0.18, "mag_curve": 0.12, "stock_type": "bullpup",
-		"spread": 0.011, "ads_spread": 0.0020, "ads_move_scale": 0.75,
-		"recoil_v": 0.013, "recoil_h": 0.005, "proj_speed": 180.0, "grav_scale": 1.15,
+		"spread": 0.009, "ads_spread": 0.0016, "ads_move_scale": 0.75,
+		"recoil_v": 0.011, "recoil_h": 0.004, "proj_speed": 205.0, "grav_scale": 1.10,
 		"fire_modes": ["burst", "auto"], "color": Color("#1e293b"), "accent": Color("#ef4444")
 	},
 	{
 		"id": "alternator", "name": "转换者冲锋枪", "en": "Alternator SMG", "cat": "SMG", "ammo": "light",
-		"rpm": 600.0, "dmg": 16, "head": 1.50, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"mag": 19, "mag_tiers": [19, 22, 25, 27], "reload": 1.90, "reload_empty": 2.23,
+		"rpm": 620.0, "dmg": 18, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 19, "mag_tiers": [19, 22, 25, 28], "reload": 1.75, "reload_empty": 2.10,
 		"reload_style": "smg_fast", "archetype": "twin_smg",
 		"rec_len": 0.30, "barrel_len": 0.18, "mag_curve": 0.05, "stock_type": "wire",
-		"spread": 0.008, "ads_spread": 0.0014, "ads_move_scale": 0.75,
-		"recoil_v": 0.009, "recoil_h": 0.003, "proj_speed": 195.0, "grav_scale": 1.1,
+		"spread": 0.0065, "ads_spread": 0.0010, "ads_move_scale": 0.75,
+		"recoil_v": 0.008, "recoil_h": 0.0025, "proj_speed": 210.0, "grav_scale": 1.05,
 		"fire_modes": ["auto"], "color": Color("#d97706"), "accent": Color("#f8fafc")
 	},
 
 	# ==================== 3. LIGHT MACHINE GUNS (LMG - 轻机枪, ADS移速 0.40x) ====================
 	{
 		"id": "spitfire", "name": "M600 喷火轻机枪", "en": "M600 Spitfire", "cat": "LMG", "ammo": "light",
-		"rpm": 540.0, "dmg": 18, "head": 1.50, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
-		"mag": 35, "mag_tiers": [35, 40, 45, 50], "reload": 3.40, "reload_empty": 4.20,
+		"rpm": 550.0, "dmg": 20, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 35, "mag_tiers": [35, 40, 45, 50], "reload": 3.10, "reload_empty": 3.80,
 		"reload_style": "lmg_box", "archetype": "heavy_lmg",
 		"rec_len": 0.58, "barrel_len": 0.48, "mag_curve": 0.0, "stock_type": "heavy",
-		"spread": 0.016, "ads_spread": 0.0030, "ads_move_scale": 0.40,
-		"recoil_v": 0.014, "recoil_h": 0.007, "proj_speed": 275.0, "grav_scale": 1.05,
+		"spread": 0.013, "ads_spread": 0.0022, "ads_move_scale": 0.40,
+		"recoil_v": 0.012, "recoil_h": 0.0055, "proj_speed": 280.0, "grav_scale": 1.05,
 		"fire_modes": ["auto"], "color": Color("#3f6212"), "accent": Color("#facc15")
 	},
 	{
 		"id": "rampage", "name": "暴走轻机枪（可铝热剂充能）", "en": "Rampage LMG", "cat": "LMG", "ammo": "heavy",
-		"rpm": 300.0, "dmg": 26, "head": 1.50, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
-		"mag": 28, "mag_tiers": [28, 32, 36, 40], "reload": 3.10, "reload_empty": 4.00,
+		"rpm": 320.0, "dmg": 28, "head": 1.60, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 28, "mag_tiers": [28, 32, 36, 40], "reload": 2.90, "reload_empty": 3.60,
 		"reload_style": "lmg_box", "archetype": "heavy_lmg",
 		"rec_len": 0.60, "barrel_len": 0.50, "mag_curve": 0.18, "stock_type": "heavy",
-		"spread": 0.014, "ads_spread": 0.0022, "ads_move_scale": 0.40,
-		"recoil_v": 0.017, "recoil_h": 0.005, "proj_speed": 265.0, "grav_scale": 1.1,
+		"spread": 0.011, "ads_spread": 0.0018, "ads_move_scale": 0.40,
+		"recoil_v": 0.015, "recoil_h": 0.004, "proj_speed": 270.0, "grav_scale": 1.05,
 		"fire_modes": ["auto"], "color": Color("#7f1d1d"), "accent": Color("#f97316")
 	},
 	{
 		"id": "devotion", "name": "专注轻机枪（渐进加速）", "en": "Devotion LMG", "cat": "LMG", "ammo": "energy",
-		"rpm": 900.0, "min_rpm": 320.0, "dmg": 15, "head": 1.50, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
-		"mag": 36, "mag_tiers": [36, 40, 44, 48], "reload": 2.80, "reload_empty": 3.63,
+		"rpm": 900.0, "min_rpm": 360.0, "dmg": 17, "head": 1.55, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 36, "mag_tiers": [36, 40, 44, 48], "reload": 2.60, "reload_empty": 3.30,
 		"reload_style": "lmg_box", "archetype": "energy_lmg",
 		"rec_len": 0.56, "barrel_len": 0.45, "mag_curve": 0.0, "stock_type": "heavy",
-		"spread": 0.017, "ads_spread": 0.0035, "ads_move_scale": 0.40,
-		"recoil_v": 0.016, "recoil_h": 0.008, "proj_speed": 335.0, "grav_scale": 0.85,
+		"spread": 0.014, "ads_spread": 0.0026, "ads_move_scale": 0.40,
+		"recoil_v": 0.014, "recoil_h": 0.0065, "proj_speed": 335.0, "grav_scale": 0.85,
 		"fire_modes": ["auto"], "color": Color("#1e293b"), "accent": Color("#38bdf8")
 	},
 	{
 		"id": "lstar", "name": "L-STAR 能量机枪", "en": "L-STAR EMG", "cat": "LMG", "ammo": "energy",
-		"rpm": 600.0, "dmg": 17, "head": 1.50, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
-		"mag": 24, "mag_tiers": [24, 26, 28, 30], "reload": 2.45, "reload_empty": 2.45,
+		"rpm": 600.0, "dmg": 19, "head": 1.60, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"mag": 24, "mag_tiers": [24, 28, 32, 36], "reload": 2.25, "reload_empty": 2.25,
 		"reload_style": "energy_cell", "archetype": "plasma_lmg",
 		"rec_len": 0.52, "barrel_len": 0.38, "mag_curve": 0.0, "stock_type": "heavy",
-		"spread": 0.014, "ads_spread": 0.0028, "ads_move_scale": 0.40,
-		"recoil_v": 0.014, "recoil_h": 0.007, "proj_speed": 240.0, "grav_scale": 0.80,
+		"spread": 0.011, "ads_spread": 0.0020, "ads_move_scale": 0.40,
+		"recoil_v": 0.012, "recoil_h": 0.0055, "proj_speed": 255.0, "grav_scale": 0.80,
 		"fire_modes": ["auto"], "color": Color("#334155"), "accent": Color("#ef4444")
 	},
 
 	# ==================== 4. MARKSMAN WEAPONS (MARKSMAN - 神射手, ADS移速 0.425x) ====================
 	{
 		"id": "g7", "name": "G7 侦察枪", "en": "G7 Scout", "cat": "MARKSMAN", "ammo": "light",
-		"rpm": 240.0, "dmg": 32, "head": 1.75, "legs": 0.75, "pellets": 1, "pellet_pattern": "single",
-		"mag": 10, "mag_tiers": [10, 15, 18, 20], "reload": 2.16, "reload_empty": 2.70,
+		"rpm": 240.0, "dmg": 35, "head": 1.80, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
+		"mag": 10, "mag_tiers": [10, 15, 18, 20], "reload": 2.10, "reload_empty": 2.60,
 		"reload_style": "ar_tactical", "archetype": "marksman_dmr",
 		"rec_len": 0.54, "barrel_len": 0.46, "mag_curve": 0.06, "stock_type": "sniper",
-		"spread": 0.012, "ads_spread": 0.0006, "ads_move_scale": 0.425,
-		"recoil_v": 0.022, "recoil_h": 0.003, "proj_speed": 300.0, "grav_scale": 1.0,
+		"spread": 0.010, "ads_spread": 0.0005, "ads_move_scale": 0.425,
+		"recoil_v": 0.019, "recoil_h": 0.0025, "proj_speed": 305.0, "grav_scale": 1.0,
 		"fire_modes": ["single", "burst"], "color": Color("#64748b"), "accent": Color("#f97316")
 	},
 	{
 		"id": "tripletake", "name": "三重式狙击枪", "en": "Triple Take", "cat": "MARKSMAN", "ammo": "energy",
-		"rpm": 81.0, "dmg": 21, "head": 1.75, "legs": 0.90, "pellets": 3, "pellet_pattern": "triple_3",
+		"rpm": 85.0, "dmg": 23, "head": 1.80, "legs": 0.90, "pellets": 3, "pellet_pattern": "triple_3",
 		"ammo_per_shot": 3, "has_choke": true,
-		"mag": 18, "mag_tiers": [18, 21, 24, 30], "reload": 2.34, "reload_empty": 3.06,
+		"mag": 18, "mag_tiers": [18, 21, 24, 30], "reload": 2.25, "reload_empty": 2.90,
 		"reload_style": "energy_cell", "archetype": "triple_marksman",
 		"rec_len": 0.56, "barrel_len": 0.52, "mag_curve": 0.0, "stock_type": "sniper",
-		"spread": 0.018, "ads_spread": 0.008, "ads_move_scale": 0.425,
-		"recoil_v": 0.024, "recoil_h": 0.003, "proj_speed": 320.0, "grav_scale": 0.75,
+		"spread": 0.016, "ads_spread": 0.007, "ads_move_scale": 0.425,
+		"recoil_v": 0.021, "recoil_h": 0.0025, "proj_speed": 325.0, "grav_scale": 0.75,
 		"fire_modes": ["single"], "color": Color("#0f172a"), "accent": Color("#a3e635")
 	},
 	{
 		"id": "repeater3030", "name": "30-30 连发枪", "en": "30-30 Repeater", "cat": "MARKSMAN", "ammo": "heavy",
-		"rpm": 139.0, "dmg": 42, "max_charge_dmg": 57, "head": 1.75, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
-		"segmented_reload": true, "rechamber": 0.43,
-		"mag": 6, "mag_tiers": [6, 8, 10, 12], "reload": 0.52, "reload_empty": 0.52,
+		"rpm": 145.0, "dmg": 44, "max_charge_dmg": 60, "head": 1.80, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"segmented_reload": true, "rechamber": 0.40,
+		"mag": 6, "mag_tiers": [6, 8, 10, 12], "reload": 0.42, "reload_empty": 0.42,
 		"reload_style": "lever_shotgun", "archetype": "lever_marksman",
 		"rec_len": 0.52, "barrel_len": 0.50, "mag_curve": 0.0, "stock_type": "sniper",
-		"spread": 0.013, "ads_spread": 0.0006, "ads_move_scale": 0.425,
-		"recoil_v": 0.025, "recoil_h": 0.003, "proj_speed": 290.0, "grav_scale": 1.05,
+		"spread": 0.011, "ads_spread": 0.0005, "ads_move_scale": 0.425,
+		"recoil_v": 0.022, "recoil_h": 0.0025, "proj_speed": 295.0, "grav_scale": 1.05,
 		"fire_modes": ["single"], "color": Color("#78350f"), "accent": Color("#f59e0b")
 	},
 	{
-		"id": "bocek", "name": "博切克复合弓（神话）", "en": "Bocek Compound Bow", "cat": "MARKSMAN", "ammo": "mythic",
-		"rpm": 120.0, "dmg": 70, "min_draw_dmg": 25, "head": 1.75, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"draw_time_max": 0.54,
-		"mag": 60, "mag_tiers": [60, 60, 60, 60], "reload": 0.35, "reload_empty": 0.35,
+		"id": "bocek", "name": "博塞克复合弓（神话）", "en": "Bocek Compound Bow", "cat": "MARKSMAN", "ammo": "arrows",
+		"rpm": 125.0, "dmg": 72, "min_draw_dmg": 28, "head": 1.80, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"draw_time_max": 0.52,
+		"mag": 60, "mag_tiers": [60, 60, 60, 60], "reload": 0.32, "reload_empty": 0.32,
 		"reload_style": "bow_draw", "archetype": "compound_bow",
 		"rec_len": 0.25, "barrel_len": 0.20, "mag_curve": 0.0, "stock_type": "bow",
 		"spread": 0.002, "ads_spread": 0.0002, "ads_move_scale": 0.55,
-		"recoil_v": 0.008, "recoil_h": 0.001, "proj_speed": 280.0, "grav_scale": 0.85,
+		"recoil_v": 0.008, "recoil_h": 0.001, "proj_speed": 290.0, "grav_scale": 0.85,
 		"fire_modes": ["bow_single", "shatter_caps"], "color": Color("#ff1e42"), "accent": Color("#fbbf24")
 	},
 
 	# ==================== 5. SNIPER RIFLES (SNIPER - 狙击步枪, ADS移速 0.35x) ====================
 	{
-		"id": "kraber", "name": "克雷贝尔 .50 狙击步枪（神话）", "en": "Kraber .50-Cal Sniper", "cat": "SNIPER", "ammo": "mythic",
-		"rpm": 25.0, "dmg": 140, "head": 2.00, "legs": 0.80, "pellets": 1, "pellet_pattern": "single",
-		"rechamber": 1.25,
-		"mag": 4, "mag_tiers": [4, 4, 4, 4], "reload": 3.20, "reload_empty": 4.30,
+		"id": "kraber", "name": "克雷贝尔 .50 狙击步枪（神话）", "en": "Kraber .50-Cal Sniper", "cat": "SNIPER", "ammo": "sniper",
+		"rpm": 28.0, "dmg": 150, "head": 2.00, "legs": 0.85, "pellets": 1, "pellet_pattern": "single",
+		"rechamber": 1.15,
+		"mag": 4, "mag_tiers": [4, 4, 4, 4], "reload": 3.00, "reload_empty": 4.00,
 		"reload_style": "bolt_sniper", "archetype": "heavy_sniper",
 		"rec_len": 0.64, "barrel_len": 0.72, "mag_curve": 0.0, "stock_type": "sniper",
-		"spread": 0.028, "ads_spread": 0.0001, "ads_move_scale": 0.35,
-		"recoil_v": 0.048, "recoil_h": 0.005, "proj_speed": 295.0, "grav_scale": 1.15,
+		"spread": 0.024, "ads_spread": 0.0001, "ads_move_scale": 0.35,
+		"recoil_v": 0.044, "recoil_h": 0.004, "proj_speed": 310.0, "grav_scale": 1.10,
 		"fire_modes": ["single"], "color": Color("#991b1b"), "accent": Color("#fbbf24")
 	},
 	{
 		"id": "sentinel", "name": "哨兵狙击步枪（可小电充能）", "en": "Sentinel", "cat": "SNIPER", "ammo": "sniper",
-		"rpm": 38.0, "dmg": 70, "amped_dmg": 88, "head": 2.00, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"rechamber": 1.05,
-		"mag": 4, "mag_tiers": [4, 5, 6, 7], "reload": 2.50, "reload_empty": 3.60,
+		"rpm": 42.0, "dmg": 74, "amped_dmg": 92, "head": 2.00, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"rechamber": 0.95,
+		"mag": 4, "mag_tiers": [4, 5, 6, 7], "reload": 2.35, "reload_empty": 3.30,
 		"reload_style": "bolt_sniper", "archetype": "bolt_sniper",
 		"rec_len": 0.58, "barrel_len": 0.62, "mag_curve": 0.0, "stock_type": "sniper",
-		"spread": 0.022, "ads_spread": 0.0002, "ads_move_scale": 0.35,
-		"recoil_v": 0.036, "recoil_h": 0.004, "proj_speed": 310.0, "grav_scale": 1.0,
+		"spread": 0.018, "ads_spread": 0.0001, "ads_move_scale": 0.35,
+		"recoil_v": 0.032, "recoil_h": 0.003, "proj_speed": 320.0, "grav_scale": 1.0,
 		"fire_modes": ["single"], "color": Color("#1e3a8a"), "accent": Color("#38bdf8")
 	},
 	{
 		"id": "longbow", "name": "长弓精确步枪", "en": "Longbow DMR", "cat": "SNIPER", "ammo": "sniper",
-		"rpm": 78.0, "dmg": 55, "head": 2.15, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"mag": 6, "mag_tiers": [6, 8, 10, 12], "reload": 2.66, "reload_empty": 3.66,
+		"rpm": 82.0, "dmg": 60, "head": 2.15, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"mag": 6, "mag_tiers": [6, 8, 10, 12], "reload": 2.45, "reload_empty": 3.35,
 		"reload_style": "ar_tactical", "archetype": "dmr_sniper",
 		"rec_len": 0.60, "barrel_len": 0.58, "mag_curve": 0.05, "stock_type": "sniper",
-		"spread": 0.018, "ads_spread": 0.0003, "ads_move_scale": 0.35,
-		"recoil_v": 0.028, "recoil_h": 0.004, "proj_speed": 305.0, "grav_scale": 1.0,
+		"spread": 0.015, "ads_spread": 0.0002, "ads_move_scale": 0.35,
+		"recoil_v": 0.025, "recoil_h": 0.003, "proj_speed": 310.0, "grav_scale": 1.0,
 		"fire_modes": ["single"], "color": Color("#334155"), "accent": Color("#38bdf8")
 	},
 	{
 		"id": "chargerifle", "name": "充能步枪（滋崩）", "en": "Charge Rifle", "cat": "SNIPER", "ammo": "sniper",
-		"rpm": 48.0, "dmg": 75, "head": 1.75, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"mag": 4, "mag_tiers": [4, 5, 6, 8], "reload": 3.50, "reload_empty": 4.60,
+		"rpm": 50.0, "dmg": 82, "head": 1.85, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"mag": 6, "mag_tiers": [6, 8, 10, 12], "reload": 3.20, "reload_empty": 4.10,
 		"reload_style": "energy_cell", "archetype": "charge_sniper",
 		"rec_len": 0.62, "barrel_len": 0.52, "mag_curve": 0.0, "stock_type": "sniper",
-		"spread": 0.010, "ads_spread": 0.0001, "ads_move_scale": 0.35,
-		"recoil_v": 0.042, "recoil_h": 0.003, "proj_speed": 335.0, "grav_scale": 0.0,
+		"spread": 0.008, "ads_spread": 0.0001, "ads_move_scale": 0.35,
+		"recoil_v": 0.038, "recoil_h": 0.0025, "proj_speed": 340.0, "grav_scale": 0.0,
 		"fire_modes": ["charge_beam"], "color": Color("#334155"), "accent": Color("#ff7700")
 	},
 
 	# ==================== 6. SHOTGUNS (SHOTGUN - 霰弹枪, 固定弹丸阵列 + 霰弹枪栓加速) ====================
 	{
 		"id": "peacekeeper", "name": "和平捍卫者", "en": "Peacekeeper", "cat": "SHOTGUN", "ammo": "shotgun",
-		"rpm": 55.0, "dmg": 9, "head": 1.25, "legs": 1.00, "pellets": 11, "pellet_pattern": "star_11",
-		"rechamber": 1.05, "has_choke": true,
-		"mag": 5, "mag_tiers": [5, 5, 5, 5], "reload": 2.50, "reload_empty": 3.50,
+		"rpm": 58.0, "dmg": 10, "head": 1.25, "legs": 1.00, "pellets": 11, "pellet_pattern": "star_11",
+		"rechamber": 0.95, "has_choke": true,
+		"mag": 5, "mag_tiers": [5, 5, 5, 5], "reload": 2.35, "reload_empty": 3.15,
 		"reload_style": "lever_shotgun", "archetype": "lever_shotgun",
 		"rec_len": 0.48, "barrel_len": 0.44, "mag_curve": 0.0, "stock_type": "shotgun",
-		"spread": 0.036, "ads_spread": 0.012, "ads_move_scale": 0.85,
-		"recoil_v": 0.028, "recoil_h": 0.005, "proj_speed": 160.0, "grav_scale": 0.6,
+		"spread": 0.026, "ads_spread": 0.011, "ads_move_scale": 0.85,
+		"recoil_v": 0.026, "recoil_h": 0.004, "proj_speed": 180.0, "grav_scale": 0.5,
 		"fire_modes": ["single"], "color": Color("#0f172a"), "accent": Color("#38bdf8")
 	},
 	{
 		"id": "mastiff", "name": "獒犬霰弹枪", "en": "Mastiff Shotgun", "cat": "SHOTGUN", "ammo": "shotgun",
-		"rpm": 79.0, "dmg": 11, "head": 1.25, "legs": 1.00, "pellets": 8, "pellet_pattern": "line_8",
-		"segmented_reload": true,
-		"mag": 5, "mag_tiers": [5, 5, 5, 6], "reload": 0.45, "reload_empty": 0.45,
+		"rpm": 78.0, "dmg": 12, "head": 1.25, "legs": 1.00, "pellets": 8, "pellet_pattern": "line_8",
+		"segmented_reload": true, "rechamber": 0.48,
+		"mag": 5, "mag_tiers": [5, 5, 5, 5], "reload": 0.42, "reload_empty": 0.42,
 		"reload_style": "pump_shotgun", "archetype": "pump_shotgun",
 		"rec_len": 0.50, "barrel_len": 0.42, "mag_curve": 0.0, "stock_type": "shotgun",
-		"spread": 0.044, "ads_spread": 0.018, "ads_move_scale": 0.85,
-		"recoil_v": 0.026, "recoil_h": 0.004, "proj_speed": 160.0, "grav_scale": 0.6,
+		"spread": 0.032, "ads_spread": 0.013, "ads_move_scale": 0.85,
+		"recoil_v": 0.024, "recoil_h": 0.003, "proj_speed": 180.0, "grav_scale": 0.5,
 		"fire_modes": ["single"], "color": Color("#78350f"), "accent": Color("#ef4444")
 	},
 	{
 		"id": "eva8", "name": "EVA-8 自动霰弹枪", "en": "EVA-8 Auto", "cat": "SHOTGUN", "ammo": "shotgun",
-		"rpm": 144.0, "dmg": 7, "head": 1.25, "legs": 1.00, "pellets": 8, "pellet_pattern": "fig8_8",
-		"mag": 8, "mag_tiers": [8, 8, 8, 8], "reload": 2.75, "reload_empty": 3.00,
+		"rpm": 148.0, "dmg": 9, "head": 1.25, "legs": 1.00, "pellets": 8, "pellet_pattern": "fig8_8",
+		"mag": 8, "mag_tiers": [8, 8, 8, 8], "reload": 2.50, "reload_empty": 2.80,
 		"reload_style": "lmg_box", "archetype": "drum_shotgun",
 		"rec_len": 0.46, "barrel_len": 0.34, "mag_curve": 0.0, "stock_type": "crane",
-		"spread": 0.038, "ads_spread": 0.028, "ads_move_scale": 0.85,
-		"recoil_v": 0.020, "recoil_h": 0.005, "proj_speed": 160.0, "grav_scale": 0.6,
+		"spread": 0.028, "ads_spread": 0.020, "ads_move_scale": 0.85,
+		"recoil_v": 0.018, "recoil_h": 0.004, "proj_speed": 180.0, "grav_scale": 0.5,
 		"fire_modes": ["auto", "burst"], "color": Color("#334155"), "accent": Color("#ef4444")
 	},
 	{
 		"id": "mozambique", "name": "莫桑比克霰弹手枪", "en": "Mozambique Shotgun", "cat": "SHOTGUN", "ammo": "shotgun",
-		"rpm": 132.0, "dmg": 15, "head": 1.35, "legs": 1.00, "pellets": 3, "pellet_pattern": "tri_3",
-		"mag": 6, "mag_tiers": [6, 6, 6, 6], "reload": 1.90, "reload_empty": 2.40,
+		"rpm": 150.0, "dmg": 16, "head": 1.35, "legs": 1.00, "pellets": 3, "pellet_pattern": "tri_3",
+		"mag": 6, "mag_tiers": [6, 6, 6, 6], "reload": 1.80, "reload_empty": 2.25,
 		"reload_style": "smg_fast", "archetype": "pistol_shotgun",
 		"rec_len": 0.28, "barrel_len": 0.22, "mag_curve": 0.0, "stock_type": "pistol",
-		"spread": 0.028, "ads_spread": 0.011, "ads_move_scale": 1.00,
-		"recoil_v": 0.018, "recoil_h": 0.004, "proj_speed": 140.0, "grav_scale": 0.7,
+		"spread": 0.020, "ads_spread": 0.009, "ads_move_scale": 1.00,
+		"recoil_v": 0.016, "recoil_h": 0.003, "proj_speed": 165.0, "grav_scale": 0.6,
 		"fire_modes": ["auto"], "color": Color("#e2e8f0"), "accent": Color("#ef4444")
 	},
 
 	# ==================== 7. PISTOLS (PISTOL - 手枪, ADS移速 1.00x) ====================
 	{
 		"id": "wingman", "name": "辅助手枪（小帮手）", "en": "Wingman", "cat": "PISTOL", "ammo": "sniper",
-		"rpm": 156.0, "dmg": 45, "head": 2.15, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"mag": 6, "mag_tiers": [6, 7, 8, 9], "reload": 2.10, "reload_empty": 2.10,
+		"rpm": 162.0, "dmg": 48, "head": 2.15, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"mag": 6, "mag_tiers": [6, 7, 8, 9], "reload": 1.95, "reload_empty": 1.95,
 		"reload_style": "revolver_swing", "archetype": "revolver_pistol",
 		"rec_len": 0.24, "barrel_len": 0.22, "mag_curve": 0.0, "stock_type": "pistol",
-		"spread": 0.009, "ads_spread": 0.0005, "ads_move_scale": 1.00,
-		"recoil_v": 0.028, "recoil_h": 0.003, "proj_speed": 180.0, "grav_scale": 1.0,
+		"spread": 0.007, "ads_spread": 0.0004, "ads_move_scale": 1.00,
+		"recoil_v": 0.025, "recoil_h": 0.0025, "proj_speed": 210.0, "grav_scale": 1.0,
 		"fire_modes": ["single"], "color": Color("#e2e8f0"), "accent": Color("#f59e0b")
 	},
 	{
 		"id": "re45", "name": "RE-45 自动手枪（锤击点）", "en": "RE-45 Auto", "cat": "PISTOL", "ammo": "light",
-		"rpm": 780.0, "dmg": 12, "head": 1.50, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"mag": 16, "mag_tiers": [16, 19, 22, 25], "reload": 1.50, "reload_empty": 1.95,
+		"rpm": 780.0, "dmg": 14, "head": 1.55, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"mag": 16, "mag_tiers": [16, 19, 22, 25], "reload": 1.40, "reload_empty": 1.80,
 		"reload_style": "smg_fast", "archetype": "auto_pistol",
 		"rec_len": 0.22, "barrel_len": 0.16, "mag_curve": 0.14, "stock_type": "pistol",
-		"spread": 0.013, "ads_spread": 0.0025, "ads_move_scale": 1.00,
-		"recoil_v": 0.011, "recoil_h": 0.005, "proj_speed": 195.0, "grav_scale": 1.05,
+		"spread": 0.010, "ads_spread": 0.0020, "ads_move_scale": 1.00,
+		"recoil_v": 0.010, "recoil_h": 0.004, "proj_speed": 210.0, "grav_scale": 1.05,
 		"fire_modes": ["auto"], "color": Color("#475569"), "accent": Color("#f97316")
 	},
 	{
 		"id": "p2020", "name": "P2020 半自动手枪（锤击点）", "en": "P2020", "cat": "PISTOL", "ammo": "light",
-		"rpm": 420.0, "dmg": 18, "head": 1.50, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
-		"mag": 14, "mag_tiers": [14, 16, 18, 21], "reload": 1.25, "reload_empty": 1.25,
+		"rpm": 430.0, "dmg": 21, "head": 1.60, "legs": 0.90, "pellets": 1, "pellet_pattern": "single",
+		"mag": 14, "mag_tiers": [14, 16, 18, 21], "reload": 1.20, "reload_empty": 1.20,
 		"reload_style": "smg_fast", "archetype": "semi_pistol",
 		"rec_len": 0.20, "barrel_len": 0.15, "mag_curve": 0.08, "stock_type": "pistol",
-		"spread": 0.008, "ads_spread": 0.0010, "ads_move_scale": 1.00,
-		"recoil_v": 0.012, "recoil_h": 0.002, "proj_speed": 185.0, "grav_scale": 1.05,
+		"spread": 0.006, "ads_spread": 0.0008, "ads_move_scale": 1.00,
+		"recoil_v": 0.010, "recoil_h": 0.002, "proj_speed": 200.0, "grav_scale": 1.05,
 		"fire_modes": ["single"], "color": Color("#94a3b8"), "accent": Color("#f97316")
 	}
 ]
@@ -636,13 +636,14 @@ func get_weapon_mag_capacity(id: String, mag_tier: int = 0) -> int:
 
 func get_shotgun_bolt_fire_mult(bolt_tier: int) -> float:
 	match bolt_tier:
-		1: return 1.10
-		2: return 1.20
-		3, 4: return 1.30
+		1: return 1.12
+		2: return 1.22
+		3, 4: return 1.35
 		_: return 1.00
 
-## Returns deterministic 2D angular offsets (in radians) for authentic Apex Legends shotgun & multi-pellet patterns
-func get_pellet_pattern_offsets(pattern_name: String, spread_rad: float) -> Array[Vector2]:
+## Returns UNIT-NORMALIZED 2D offsets in [-1.0, 1.0] for authentic Apex Legends shotgun & multi-pellet patterns.
+## Note: Callers multiply these unit coordinates by `spread` (radians) for 3D ballistics or `grid_scale` (pixels) for HUD!
+func get_pellet_pattern_offsets(pattern_name: String, _pellets_or_unused: float = 1.0) -> Array[Vector2]:
 	var pts: Array[Vector2] = []
 	match pattern_name:
 		"star_11":
@@ -650,38 +651,38 @@ func get_pellet_pattern_offsets(pattern_name: String, spread_rad: float) -> Arra
 			pts.append(Vector2.ZERO)
 			for i in range(5):
 				var ang_in: float = -PI * 0.5 + float(i) * (TAU / 5.0) + (PI / 5.0)
-				pts.append(Vector2(cos(ang_in), sin(ang_in)) * (spread_rad * 0.48))
+				pts.append(Vector2(cos(ang_in), sin(ang_in)) * 0.46)
 				var ang_out: float = -PI * 0.5 + float(i) * (TAU / 5.0)
-				pts.append(Vector2(cos(ang_out), sin(ang_out)) * spread_rad)
+				pts.append(Vector2(cos(ang_out), sin(ang_out)) * 0.92)
 		"line_8":
 			# Mastiff 8-pellet Horizontal Flat Line pattern
-			var norm_xs := [-1.0, -0.70, -0.42, -0.14, 0.14, 0.42, 0.70, 1.0]
+			var norm_xs := [-0.95, -0.66, -0.38, -0.12, 0.12, 0.38, 0.66, 0.95]
 			for nx in norm_xs:
-				pts.append(Vector2(float(nx) * spread_rad, 0.0))
+				pts.append(Vector2(float(nx), 0.0))
 		"fig8_8":
 			# EVA-8 8-pellet Figure-8 (双环8字形) pattern
 			var coords := [
-				Vector2(0.0, -0.85), Vector2(-0.55, -0.55), Vector2(0.55, -0.55), Vector2(0.0, -0.15),
-				Vector2(0.0, 0.15), Vector2(-0.55, 0.55), Vector2(0.55, 0.55), Vector2(0.0, 0.85)
+				Vector2(0.0, -0.82), Vector2(-0.52, -0.52), Vector2(0.52, -0.52), Vector2(0.0, -0.15),
+				Vector2(0.0, 0.15), Vector2(-0.52, 0.52), Vector2(0.52, 0.52), Vector2(0.0, 0.82)
 			]
 			for c in coords:
-				pts.append(c * spread_rad)
+				pts.append(c)
 		"tri_3":
 			# Mozambique 3-pellet Triangle Drill (1 top head, 2 bottom torso)
-			pts.append(Vector2(0.0, -0.68) * spread_rad)
-			pts.append(Vector2(-0.62, 0.48) * spread_rad)
-			pts.append(Vector2(0.62, 0.48) * spread_rad)
+			pts.append(Vector2(0.0, -0.62))
+			pts.append(Vector2(-0.56, 0.44))
+			pts.append(Vector2(0.56, 0.44))
 		"triple_3":
 			# Triple Take 3 horizontal energy bolts
-			pts.append(Vector2(-spread_rad, 0.0))
+			pts.append(Vector2(-0.85, 0.0))
 			pts.append(Vector2(0.0, 0.0))
-			pts.append(Vector2(spread_rad, 0.0))
+			pts.append(Vector2(0.85, 0.0))
 		"shatter_7":
 			# Bocek Shatter Caps 7-pellet pattern (center + 6 triangle ring)
 			pts.append(Vector2.ZERO)
 			for i in range(6):
 				var ang: float = float(i) * (TAU / 6.0)
-				pts.append(Vector2(cos(ang), sin(ang)) * spread_rad)
+				pts.append(Vector2(cos(ang), sin(ang)) * 0.85)
 		_:
 			pts.append(Vector2.ZERO)
 	return pts

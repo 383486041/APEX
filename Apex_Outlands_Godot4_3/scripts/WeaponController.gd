@@ -1,10 +1,12 @@
 class_name WeaponController
 extends Node3D
-## Drives First-Person Weapon Ballistics (True Raycast + Wall Occlusion, Zero Homing Bullets),
-## Authentic Shotgun Pellet Patterns (Star-11, Line-8, Fig8-8, Triangle-3) & Precision Choke,
+## Drives First-Person Weapon Ballistics (True 3D Ray-to-Capsule Intersection + Wall Occlusion),
+## Authentic Unit-Normalized Shotgun Pellet Patterns (Star-11, Line-8, Fig8-8, Triangle-3) & Precision Choke,
+## Shotgun Bolt Fire-Rate & Rechamber Acceleration, 30-30 Repeater ADS Charge, L-STAR Overheat Cooling,
 ## Bocek Compound Bow Hold-to-Draw & Release Mechanics, Burst-Fire & Energy Windup State Machines,
-## Multi-Stage Procedural Reloads (including Segmented Shell-by-Shell Reload for Mastiff/30-30),
-## First-Person Consumable Animations (Shield Battery Capacitor Twist & Syringe/MedKit Injection),
+## Archetype-Specific Choreographed Reloads (AR Tactical, Bullpup Rear Mag, Peacekeeper Lever Flip,
+## Segmented Shell-by-Shell Mastiff/30-30, Wingman Swing-Out Cylinder, Sniper Bolt Action),
+## Holstered-Weapon Two-Handed First-Person Consumable Animations (Shield Battery Twist & Syringe Injection),
 ## Quick Melee (V), 3-Stage Heirloom Slash Combos, and Weapon Inspect (N).
 
 var player: PlayerController
@@ -21,11 +23,13 @@ var charge_beam_mesh: MeshInstance3D = null
 
 # Bocek Compound Bow Hold-to-Draw State Machine
 var is_drawing_bow: bool = false
-var bow_draw_progress: float = 0.0 # 0.0 to 1.0 (full draw at 0.54s)
+var bow_draw_progress: float = 0.0 # 0.0 to 1.0 (full draw at 0.52s)
 var bow_hold_time: float = 0.0
 
-# Peacekeeper / Triple Take ADS Precision Choke State
+# Peacekeeper / Triple Take ADS Precision Choke & 30-30 Repeater ADS Charge State
 var choke_progress: float = 0.0 # 0.0 to 1.0
+var repeater_charge: float = 0.0 # 0.0 to 1.0 (+36% damage at full ADS charge)
+var lstar_heat: float = 0.0 # 0.0 to 1.0
 
 # Burst-Fire State Machine (Hemlok 3-burst, Nemesis 4-burst, Prowler 5-burst)
 var burst_shots_remaining: int = 0
@@ -33,7 +37,7 @@ var burst_next_shot_timer: float = 0.0
 var nemesis_energy_charge: float = 0.0 # 0.0 to 1.0 (+32% RPM at full charge)
 var devotion_spinup: float = 0.0 # 0.0 to 1.0
 
-# Reload State Machine (Supports Standard Mag & Segmented Shell-by-Shell Reload)
+# Reload State Machine (Supports Standard Mag, Bullpup, Lever, Revolver, Sniper & Segmented Shell-by-Shell)
 var reload_timer: float = 0.0
 var reload_total: float = 0.0
 var is_empty_reload: bool = false
@@ -70,11 +74,12 @@ func _process(delta: float) -> void:
 	prev_cam_pitch = player.pitch
 	sway_offset = sway_offset.lerp(Vector2(-dyaw * 0.45, dpitch * 0.45).limit_length(0.06), delta * 14.0)
 
-	# Decay consecutive shot counter when not firing
+	# Decay consecutive shot counter & L-STAR heat when not firing
 	var now_ms: int = Time.get_ticks_msec()
-	if now_ms - last_fire_ms > 280:
+	if now_ms - last_fire_ms > 240:
 		consecutive_shots = maxi(0, consecutive_shots - 1)
 		devotion_spinup = maxf(0.0, devotion_spinup - delta * 1.4)
+		lstar_heat = maxf(0.0, lstar_heat - delta * 0.55)
 
 	nemesis_energy_charge = maxf(0.0, nemesis_energy_charge - delta * 0.08)
 
@@ -85,6 +90,7 @@ func _process(delta: float) -> void:
 		is_drawing_bow = false
 		bow_draw_progress = 0.0
 		burst_shots_remaining = 0
+		repeater_charge = 0.0
 
 	# Handle Charge Rifle "滋崩" Sequence
 	if is_charging_beam:
@@ -101,13 +107,13 @@ func _process(delta: float) -> void:
 			burst_next_shot_timer -= delta
 			if burst_next_shot_timer <= 0.0:
 				burst_shots_remaining -= 1
-				burst_next_shot_timer = 0.052
+				burst_next_shot_timer = 0.048
 				_execute_single_shot(enemies, true)
 
 	# Handle Bocek Compound Bow Draw & Release
 	_update_bocek_bow(delta)
 
-	# Handle ADS Precision Choke (Peacekeeper & Triple Take)
+	# Handle ADS Precision Choke (Peacekeeper & Triple Take) & 30-30 Repeater ADS Charge
 	_update_precision_choke(delta)
 
 	# Decay Charged Weapon timers (Sentinel / Rampage)
@@ -140,7 +146,8 @@ func _process(delta: float) -> void:
 			if progress >= 0.45 and (reload_step_mask & 2) == 0:
 				reload_step_mask |= 2
 				AudioSynthesizer.play_reload_step("shell_insert")
-				kick_offset.y += 0.022
+				kick_offset.y += 0.024
+				kick_rot.z += 0.06
 				player.add_camera_recoil(0.008, 0.004, 0.008)
 			if reload_timer <= 0.0:
 				_complete_segmented_shell_insert()
@@ -152,46 +159,55 @@ func _process(delta: float) -> void:
 			if progress >= 0.56 and (reload_step_mask & 2) == 0:
 				reload_step_mask |= 2
 				AudioSynthesizer.play_reload_step("mag_in")
-				kick_offset.y += 0.035
+				kick_offset.y += 0.038
 				player.add_camera_recoil(0.012, 0.0, 0.01)
 			if progress >= 0.82 and (reload_step_mask & 4) == 0:
 				reload_step_mask |= 4
-				AudioSynthesizer.play_reload_step("bolt_slap")
+				var slot_s: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+				var wid_s: String = str(slot_s.get("weapon_id", "r301"))
+				AudioSynthesizer.play_reload_step("lever_cock" if wid_s == "peacekeeper" else "bolt_slap")
 				player.add_camera_recoil(-0.015, 0.008, 0.015)
 
 			if reload_timer <= 0.0:
 				reload_timer = 0.0
-				var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+				var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
+				PlayerState.recalculate_weapon_slot(slot_idx, false)
+				var slot: Dictionary = PlayerState.loadout[slot_idx]
 				var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 				var needed: int = int(slot["max_ammo"]) - int(slot["ammo"])
 				var ammo_key: String = str(wep["ammo"])
 				var loaded: int = PlayerState.deduct_ammo(ammo_key, needed)
 				slot["ammo"] = int(slot["ammo"]) + loaded
-				PlayerState.state_updated.emit()
+				PlayerState.sync_ammo_reserve_from_inventory()
 
 	_animate_viewmodel(delta)
 
 
 func _complete_segmented_shell_insert() -> void:
-	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+	var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
+	PlayerState.recalculate_weapon_slot(slot_idx, false)
+	var slot: Dictionary = PlayerState.loadout[slot_idx]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
+	var wid: String = str(wep["id"])
 	var ammo_key: String = str(wep["ammo"])
 	if int(slot["ammo"]) < int(slot["max_ammo"]):
 		var loaded: int = PlayerState.deduct_ammo(ammo_key, 1)
 		if loaded > 0:
 			slot["ammo"] = int(slot["ammo"]) + 1
-			PlayerState.state_updated.emit()
+			PlayerState.sync_ammo_reserve_from_inventory()
 
 	# Continue inserting next shell if still below max_ammo and reserves remain
-	var new_avail: int = int(PlayerState.ammo_reserve.get(ammo_key, 0))
+	var new_avail: int = PlayerState.get_reserve_ammo(ammo_key)
 	if int(slot["ammo"]) < int(slot["max_ammo"]) and (new_avail > 0 or PlayerState.selected_mode_id == "firing_range"):
-		reload_total = 0.48 if str(wep["id"]) == "mastiff" else 0.42
+		var stock_t: int = maxi(int(slot.get("stock", 0)), int(slot.get("stock_tier", 0)))
+		var stock_mult: float = 1.0 - float(stock_t) * 0.07
+		reload_total = (0.42 if wid == "mastiff" else 0.38) * stock_mult
 		reload_timer = reload_total
 		reload_step_mask = 0
 	else:
 		reload_timer = 0.0
 		is_segmented_reload = false
-		AudioSynthesizer.play_reload_step("pump_action")
+		AudioSynthesizer.play_reload_step("pump_action" if wid == "mastiff" else "lever_cock")
 
 
 func _update_bocek_bow(delta: float) -> void:
@@ -207,20 +223,19 @@ func _update_bocek_bow(delta: float) -> void:
 		return
 
 	var holding_fire: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	var avail_arrows: int = int(PlayerState.ammo_reserve.get("arrows", 60))
+	var avail_arrows: int = PlayerState.get_reserve_ammo("arrows")
 	if holding_fire and (int(slot["ammo"]) > 0 or avail_arrows > 0 or PlayerState.selected_mode_id == "firing_range"):
 		if not is_drawing_bow:
 			var now_b: int = Time.get_ticks_msec()
-			if now_b - last_fire_ms < 280:
+			if now_b - last_fire_ms < 260:
 				return
 			is_drawing_bow = true
 			bow_draw_progress = 0.0
 			bow_hold_time = 0.0
 			AudioSynthesizer.play_bow_draw()
 		bow_hold_time += delta
-		bow_draw_progress = clampf(bow_hold_time / 0.54, 0.0, 1.0)
+		bow_draw_progress = clampf(bow_hold_time / 0.52, 0.0, 1.0)
 	elif is_drawing_bow:
-		# Release arrow on mouse button release!
 		_fire_bocek_arrow(bow_draw_progress)
 		is_drawing_bow = false
 		bow_draw_progress = 0.0
@@ -231,7 +246,7 @@ func _fire_bocek_arrow(draw_ratio: float) -> void:
 	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
 	var wep: Dictionary = GameData.get_weapon_by_id("bocek")
 	if PlayerState.selected_mode_id != "firing_range":
-		var cur_arrows: int = int(PlayerState.ammo_reserve.get("arrows", 0))
+		var cur_arrows: int = PlayerState.get_reserve_ammo("arrows")
 		if cur_arrows > 0:
 			PlayerState.deduct_ammo("arrows", 1)
 		elif int(slot["ammo"]) > 0:
@@ -242,7 +257,6 @@ func _fire_bocek_arrow(draw_ratio: float) -> void:
 	last_fire_ms = Time.get_ticks_msec()
 	AudioSynthesizer.play_bow_release(draw_ratio)
 
-	# Recoil & string snap
 	kick_offset = Vector3(0, 0.010, 0.045)
 	kick_rot = Vector3(0.035, randf_range(-0.008, 0.008), -0.24)
 	player.add_camera_recoil(0.014, randf_range(-0.004, 0.004), 0.01)
@@ -250,16 +264,15 @@ func _fire_bocek_arrow(draw_ratio: float) -> void:
 	var cam := player.camera
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
-	var spread: float = lerpf(0.018, 0.001, draw_ratio) * (0.35 if player.is_ads else 1.0)
+	var spread: float = lerpf(0.016, 0.0008, draw_ratio) * (0.35 if player.is_ads else 1.0)
 	var ray_dir: Vector3 = (fwd + cam.global_transform.basis.x * randf_range(-spread, spread) + cam.global_transform.basis.y * randf_range(-spread, spread)).normalized()
 
-	var hit_info: Dictionary = _cast_ballistic_ray(origin, ray_dir, 320.0)
+	var hit_info: Dictionary = _cast_ballistic_ray(origin, ray_dir, 320.0, false)
 	var hit_pos: Vector3 = hit_info["hit_pos"]
 	var hit_bot: ApexBotAI = hit_info["hit_bot"]
 	var was_head: bool = hit_info["was_head"]
 
-	# Scale Bocek damage from 25 (snap shot) to 70 (full draw), with 1.75x headshot
-	var base_dmg: int = int(round(lerpf(25.0, float(wep["dmg"]), draw_ratio)))
+	var base_dmg: int = int(round(lerpf(28.0, float(wep["dmg"]), draw_ratio)))
 	if was_head:
 		base_dmg = int(round(float(base_dmg) * float(wep["head"])))
 
@@ -302,21 +315,29 @@ func _spawn_embedded_arrow(hit_pos: Vector3, dir: Vector3) -> void:
 func _update_precision_choke(delta: float) -> void:
 	if PlayerState.active_slot == 2 or reload_timer > 0.0 or PlayerState.heal_cast_timer > 0.0:
 		choke_progress = 0.0
+		repeater_charge = 0.0
 		return
 	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
+	var wid: String = str(wep["id"])
+
 	if bool(wep.get("has_choke", false)) and player.is_ads and rechamber_timer <= 0.0:
 		var prev_c: float = choke_progress
-		choke_progress = clampf(choke_progress + delta / 1.15, 0.0, 1.0)
+		choke_progress = clampf(choke_progress + delta / 1.05, 0.0, 1.0)
 		if (prev_c < 0.33 and choke_progress >= 0.33) or (prev_c < 0.66 and choke_progress >= 0.66) or (prev_c < 0.98 and choke_progress >= 0.98):
 			AudioSynthesizer.play_shotgun_choke_step(choke_progress)
 	else:
 		choke_progress = maxf(0.0, choke_progress - delta * 2.5)
 
+	if wid == "repeater3030" and player.is_ads and rechamber_timer <= 0.0:
+		repeater_charge = clampf(repeater_charge + delta / 0.55, 0.0, 1.0)
+	else:
+		repeater_charge = maxf(0.0, repeater_charge - delta * 3.5)
 
-func _cast_ballistic_ray(origin: Vector3, ray_dir: Vector3, max_dist: float = 340.0) -> Dictionary:
-	## True 3D Physics Raycast + Ray-to-Capsule Enemy Intersection along exact ray_dir.
-	## Eliminates the homing-bullet bug: bullets NEVER snap to enemy positions off-axis and NEVER penetrate walls!
+
+func _cast_ballistic_ray(origin: Vector3, ray_dir: Vector3, max_dist: float = 340.0, is_shotgun_pellet: bool = false) -> Dictionary:
+	## True 3D Physics Raycast + Exact Ray-to-Spine Segment Intersection against Enemy Capsules.
+	## Eliminates missed angled shots on head/torso and provides responsive shotgun pellet hit registration!
 	var wall_dist: float = max_dist
 	var final_pos: Vector3 = origin + ray_dir * max_dist
 
@@ -331,7 +352,7 @@ func _cast_ballistic_ray(origin: Vector3, ray_dir: Vector3, max_dist: float = 34
 				final_pos = wall_hit["position"]
 				wall_dist = origin.distance_to(final_pos)
 
-	# 2. Check Exact Ray-to-Enemy Capsule Intersection before wall_dist
+	# 2. Check Ray-to-Enemy Vertical Spine Capsule Intersection before wall_dist
 	var best_bot: ApexBotAI = null
 	var best_dist: float = wall_dist
 	var best_head: bool = false
@@ -341,24 +362,33 @@ func _cast_ballistic_ray(origin: Vector3, ray_dir: Vector3, max_dist: float = 34
 		if not is_instance_valid(bot) or bot.hp <= 0.0:
 			continue
 		var bot_feet: Vector3 = bot.global_position
-		# Project enemy center onto ray_dir
-		var to_center: Vector3 = (bot_feet + Vector3(0, 1.0, 0)) - origin
-		var proj: float = to_center.dot(ray_dir)
-		if proj < 0.5 or proj > best_dist:
+		var to_mid: Vector3 = (bot_feet + Vector3(0, 1.0, 0)) - origin
+		var approx_proj: float = to_mid.dot(ray_dir)
+		if approx_proj < 0.4 or approx_proj > best_dist + 1.0:
 			continue
 
-		# Exact 3D point on the ray at distance `proj` (NO snapping to bot_feet!)
-		var ray_pt: Vector3 = origin + ray_dir * proj
+		# Compute closest point between the ray (origin + t * ray_dir) and the vertical spine segment (bot_feet.y + [0.15, 1.85])
+		# Evaluate ray at several heights or solve closest horizontal approach
+		var horiz_ray_len_sq: float = ray_dir.x * ray_dir.x + ray_dir.z * ray_dir.z
+		var t_closest: float = approx_proj
+		if horiz_ray_len_sq > 0.0001:
+			var dx: float = bot_feet.x - origin.x
+			var dz: float = bot_feet.z - origin.z
+			t_closest = clampf((dx * ray_dir.x + dz * ray_dir.z) / horiz_ray_len_sq, 0.4, best_dist)
+
+		var ray_pt: Vector3 = origin + ray_dir * t_closest
 		var rel_y: float = ray_pt.y - bot_feet.y
-		if rel_y < -0.05 or rel_y > 2.02:
+		if rel_y < -0.10 or rel_y > 2.08:
 			continue
 
 		var horiz_dist: float = Vector2(ray_pt.x - bot_feet.x, ray_pt.z - bot_feet.z).length()
-		var is_head_zone: bool = (rel_y >= 1.44)
-		var hit_radius: float = 0.27 if is_head_zone else 0.44
+		var is_head_zone: bool = (rel_y >= 1.42)
+		var base_body_r: float = 0.54 if is_shotgun_pellet else 0.48
+		var base_head_r: float = 0.33 if is_shotgun_pellet else 0.30
+		var hit_radius: float = base_head_r if is_head_zone else base_body_r
 
 		if horiz_dist <= hit_radius:
-			best_dist = proj
+			best_dist = t_closest
 			best_bot = bot
 			best_head = is_head_zone
 			best_hit_pt = ray_pt
@@ -382,11 +412,13 @@ func _animate_viewmodel(delta: float) -> void:
 	var is_heirloom: bool = (PlayerState.active_slot == 2)
 	var slot_cur: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
 	var wid_cur: String = str(slot_cur.get("weapon_id", "r301"))
+	var wep_cur: Dictionary = GameData.get_weapon_by_id(wid_cur)
+	var reload_style: String = str(wep_cur.get("reload_style", "ar_tactical"))
 	var is_bow: bool = (wid_cur == "bocek" and not is_heirloom)
 	var is_healing: bool = (PlayerState.heal_cast_timer > 0.0)
 
-	var sprinting: bool = Input.is_key_pressed(KEY_SHIFT) and not player.is_ads and reload_timer <= 0.0 and not is_drawing_bow and not is_healing
-	var base_pos := Vector3(0.0, -0.16, -0.42) if is_healing else (Vector3(0.24, -0.22, -0.46) if is_heirloom else (Vector3(0.22, -0.20, -0.48) if is_bow else Vector3(0.28, -0.24, -0.54)))
+	var sprinting: bool = Input.is_key_pressed(KEY_SHIFT) and not player.is_ads and reload_timer <= 0.0 and not is_drawing_bow and not is_healing and not player.is_sliding
+	var base_pos := Vector3(0.0, -0.15, -0.38) if is_healing else (Vector3(0.24, -0.22, -0.46) if is_heirloom else (Vector3(0.22, -0.20, -0.48) if is_bow else Vector3(0.26, -0.22, -0.52)))
 	var optic_node: Node3D = gun_rig.get_node_or_null("OpticPivot")
 	var cur_op: String = str(slot_cur.get("optic", "2x_bruiser"))
 
@@ -397,8 +429,8 @@ func _animate_viewmodel(delta: float) -> void:
 		else:
 			vm.visible = true
 			var is_pistol: bool = (wid_cur == "wingman" or wid_cur == "mozambique" or wid_cur == "re45" or wid_cur == "p2020")
-			var ads_y: float = -0.082 if is_bow else (-0.098 if is_pistol else -0.111)
-			var ads_z: float = -0.25 if is_bow else -0.22
+			var ads_y: float = -0.082 if is_bow else (-0.094 if is_pistol else -0.102)
+			var ads_z: float = -0.25 if is_bow else -0.24
 			base_pos = Vector3(0.0, ads_y, ads_z)
 		if optic_node:
 			var sight_dot: Node3D = optic_node.get_node_or_null("SightDot")
@@ -413,7 +445,7 @@ func _animate_viewmodel(delta: float) -> void:
 
 	var ammo_housing: Node3D = gun_rig.get_node_or_null("AmmoScreenHousing")
 	if ammo_housing:
-		ammo_housing.visible = not player.is_ads and not is_healing
+		ammo_housing.visible = (not is_healing) and (not is_heirloom)
 	var charm_node: Node3D = gun_rig.get_node_or_null("OmamoriCharm")
 	if charm_node:
 		charm_node.visible = not player.is_ads and not is_healing
@@ -421,19 +453,21 @@ func _animate_viewmodel(delta: float) -> void:
 	# Locomotion Figure-8 Bobbing & Dynamic Rotational Sway
 	var bob_x: float = cos(player.bob_time * 0.5) * (0.014 if sprinting else 0.006)
 	var bob_y: float = absf(sin(player.bob_time)) * (0.018 if sprinting else 0.007)
-	if player.is_ads:
-		bob_x *= 0.18
-		bob_y *= 0.18
+	if player.is_ads or player.is_sliding:
+		bob_x *= 0.16
+		bob_y *= 0.16
 
 	var sway_pos := Vector3(sway_offset.x, sway_offset.y, 0.0)
+	if player.is_sliding and not is_healing and not player.is_ads:
+		base_pos += Vector3(-0.05, -0.03, 0.04)
 	vm.position = vm.position.lerp(base_pos + Vector3(bob_x, -bob_y, 0) + kick_offset + sway_pos, delta * 18.0)
 
 	var target_rot := kick_rot + Vector3(sway_offset.y * 1.4, sway_offset.x * 1.8, (-0.24 if is_bow and not player.is_ads else (-0.08 if is_bow else 0.0)))
-	if player.is_sliding:
-		target_rot.z += -0.34
-		target_rot.x += 0.12
+	if player.is_sliding and not is_healing:
+		# Authentic Apex Legends Tactical Canted Slide Posture!
+		target_rot += Vector3(0.16, 0.24, -0.46)
 	elif sprinting and not is_heirloom:
-		target_rot = Vector3(0.28, 0.42, -0.22)
+		target_rot = Vector3(0.24, 0.40, -0.24)
 
 	var mag_pivot: Node3D = gun_rig.get_node_or_null("MagPivot")
 	var bolt_pivot: Node3D = gun_rig.get_node_or_null("BoltPivot")
@@ -445,20 +479,25 @@ func _animate_viewmodel(delta: float) -> void:
 
 	if ammo_lbl != null and not is_heirloom:
 		if is_bow:
-			ammo_lbl.text = "%02d" % int(PlayerState.ammo_reserve.get("arrows", 60))
+			ammo_lbl.text = "%02d" % PlayerState.get_reserve_ammo("arrows")
+		elif wid_cur == "lstar":
+			var heat_pct: int = int(round(lstar_heat * 99.0))
+			ammo_lbl.text = "H%02d" % heat_pct if heat_pct > 0 else "%02d" % mini(99, PlayerState.get_reserve_ammo("energy"))
 		else:
 			ammo_lbl.text = "RLD" if reload_timer > 0.0 else "%02d" % int(slot_cur["ammo"])
 
 	# =========================================================================
-	# 0. FIRST-PERSON CONSUMABLE ANIMATION (打药动作 & 使用电池动作)
+	# 0. FIRST-PERSON CONSUMABLE ANIMATION (打药动作 & 使用电池动作 — 完全收起枪械!)
 	# =========================================================================
 	if is_healing:
 		if cons_pivot != null:
 			cons_pivot.visible = true
+		# Hide ALL weapon receiver/barrel/mag/optic meshes so ONLY hands + battery/syringe are visible!
 		for child in gun_rig.get_children():
 			if child.name != "ConsumablePivot" and child.name != "LeftArmPivot" and child.name != "RightArmPivot":
 				if child.visible:
 					child.visible = false
+
 		var heal_id: String = PlayerState.active_heal_id
 		var is_bat: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
 		var bat_prop: Node3D = cons_pivot.get_node_or_null("BatteryProp") if cons_pivot != null else null
@@ -472,50 +511,53 @@ func _animate_viewmodel(delta: float) -> void:
 		var pulse_w: float = sin(hp_prog * PI * 8.0)
 
 		if is_bat and bat_prop != null and cons_pivot != null:
-			# Update capacitor core color (Blue for Cell, Cyan for Battery, Violet-Gold for Phoenix)
+			# Update capacitor core & OmniLight color (Blue for Cell, Cyan for Battery, Violet-Gold for Phoenix)
+			var bcol: Color = Color("#a855f7") if heal_id == "phoenix_kit" else (Color("#06b6d4") if heal_id == "shield_battery" else Color("#3b82f6"))
 			var core_mesh: MeshInstance3D = bat_prop.get_node_or_null("BatteryCoreMesh")
 			if core_mesh and core_mesh.material_override is StandardMaterial3D:
 				var cmat: StandardMaterial3D = core_mesh.material_override
-				var bcol: Color = Color("#a855f7") if heal_id == "phoenix_kit" else (Color("#06b6d4") if heal_id == "shield_battery" else Color("#3b82f6"))
 				cmat.albedo_color = bcol
 				cmat.emission = bcol
-				cmat.emission_energy_multiplier = 3.0 + hp_prog * 5.5
+				cmat.emission_energy_multiplier = 3.2 + hp_prog * 5.8
+			var blight: OmniLight3D = bat_prop.get_node_or_null("BatteryOmniLight")
+			if blight:
+				blight.light_color = bcol
+				blight.light_energy = 1.4 + hp_prog * 2.4
 
-			# Bring battery to center screen, twist top cap & pull capacitor open!
-			cons_pivot.position = cons_pivot.position.lerp(Vector3(-0.02, 0.05 + sin(hp_prog * TAU * 3.0) * 0.008, -0.10), delta * 14.0)
-			cons_pivot.rotation = Vector3(0.18, 0.15, -0.05 + pulse_w * 0.04)
+			# Two-handed center-screen Shield Battery posture:
+			cons_pivot.position = cons_pivot.position.lerp(Vector3(0.0, 0.02 + sin(hp_prog * TAU * 3.0) * 0.008, -0.06), delta * 15.0)
+			cons_pivot.rotation = Vector3(0.24, -0.10, 0.06 + pulse_w * 0.035)
 			var twist_top: Node3D = bat_prop.get_node_or_null("BatteryTwistTop")
 			if twist_top:
-				twist_top.position.y = 0.085 + clampf(hp_prog * 1.3, 0.0, 1.0) * 0.038
-				twist_top.rotation.y = hp_prog * TAU * 2.5
+				twist_top.position.y = 0.095 + clampf(hp_prog * 1.35, 0.0, 1.0) * 0.042
+				twist_top.rotation.y = hp_prog * TAU * 3.0
 
-			# Left hand grips lower battery body, Right hand reaches over to twist top cap
+			# Left hand wraps tightly around the lower battery housing; Right hand grips & twists top handle bar!
 			if left_arm:
-				left_arm.position = left_arm.position.lerp(Vector3(-0.06, -0.01, -0.10), delta * 14.0)
-				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.42, 0.28, -0.15), delta * 14.0)
+				left_arm.position = left_arm.position.lerp(Vector3(-0.055, -0.055, -0.06), delta * 15.0)
+				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.38, 0.42, -0.24), delta * 15.0)
 			if right_arm:
-				right_arm.position = right_arm.position.lerp(Vector3(0.05, 0.12, -0.09), delta * 14.0)
-				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.65, -0.38, 0.28 + pulse_w * 0.12), delta * 14.0)
+				right_arm.position = right_arm.position.lerp(Vector3(0.052, 0.115 + clampf(hp_prog * 1.35, 0.0, 1.0) * 0.032, -0.055), delta * 15.0)
+				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.62, -0.45, 0.32 + pulse_w * 0.14), delta * 15.0)
 			target_rot = Vector3.ZERO
 		elif med_prop != null and cons_pivot != null:
-			# Syringe / MedKit Pneumatic Injection Animation!
-			cons_pivot.position = cons_pivot.position.lerp(Vector3(0.0, 0.03, -0.10), delta * 14.0)
-			var jab_offset: float = sin(clampf((hp_prog - 0.15) * 3.5, 0.0, 1.0) * PI) * 0.035
-			cons_pivot.position.y -= jab_offset
-			cons_pivot.rotation = Vector3(0.45, -0.18, -0.28)
+			# Two-handed Syringe / MedKit Pneumatic Auto-Injector Animation!
+			var jab_offset: float = sin(clampf((hp_prog - 0.15) * 3.5, 0.0, 1.0) * PI) * 0.038
+			cons_pivot.position = cons_pivot.position.lerp(Vector3(-0.01, 0.02 - jab_offset, -0.07), delta * 15.0)
+			cons_pivot.rotation = Vector3(0.42, -0.20, -0.26)
 			var plunger: Node3D = med_prop.get_node_or_null("SyringePlunger")
 			if plunger:
-				plunger.position.y = lerpf(0.095, 0.058, clampf((hp_prog - 0.25) / 0.65, 0.0, 1.0))
+				plunger.position.y = lerpf(0.102, 0.060, clampf((hp_prog - 0.22) / 0.65, 0.0, 1.0))
 
 			if left_arm:
-				left_arm.position = left_arm.position.lerp(Vector3(-0.05, 0.01 - jab_offset, -0.10), delta * 14.0)
-				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.48, 0.35, -0.25), delta * 14.0)
+				left_arm.position = left_arm.position.lerp(Vector3(-0.050, 0.00 - jab_offset, -0.07), delta * 15.0)
+				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.46, 0.38, -0.24), delta * 15.0)
 			if right_arm:
-				right_arm.position = right_arm.position.lerp(Vector3(0.04, 0.09 - jab_offset, -0.09), delta * 14.0)
-				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.55, -0.28, 0.22), delta * 14.0)
+				right_arm.position = right_arm.position.lerp(Vector3(0.035, 0.095 - jab_offset, -0.065), delta * 15.0)
+				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.58, -0.32, 0.25), delta * 15.0)
 			target_rot = Vector3.ZERO
 
-		gun_rig.rotation = gun_rig.rotation.lerp(target_rot, delta * 14.0)
+		gun_rig.rotation = gun_rig.rotation.lerp(target_rot, delta * 15.0)
 		return
 	else:
 		if cons_pivot != null and cons_pivot.visible:
@@ -548,75 +590,151 @@ func _animate_viewmodel(delta: float) -> void:
 			left_arm.position = left_arm.position.lerp(Vector3(-0.02, -0.04, -0.14), delta * 16.0)
 
 	# =========================================================================
-	# 2. MULTI-STAGE & SEGMENTED RELOAD PROCEDURAL ANIMATION
+	# 2. ARCHETYPE-SPECIFIC CHOREOGRAPHED RELOAD ANIMATIONS
 	# =========================================================================
-	var base_mag_z: float = 0.22 if str(GameData.get_weapon_by_id(wid_cur).get("stock_type", "")) == "bullpup" else -0.05
+	var is_bullpup: bool = (str(wep_cur.get("stock_type", "")) == "bullpup")
+	var base_mag_pos := Vector3(0, -0.14, 0.22 if is_bullpup else -0.05)
+	if wid_cur == "wingman":
+		base_mag_pos = Vector3(0, 0.018, -0.02)
+	elif wid_cur == "peacekeeper":
+		base_mag_pos = Vector3(-0.02, -0.02, -0.08)
+	elif wid_cur == "mastiff" or wid_cur == "repeater3030":
+		base_mag_pos = Vector3(0, -0.04, -0.06)
+	elif wid_cur == "chargerifle":
+		base_mag_pos = Vector3(0, -0.11, 0.02)
+
 	if reload_timer > 0.0 and not is_heirloom:
 		var p: float = 1.0 - clampf(reload_timer / maxf(0.01, reload_total), 0.0, 1.0)
 		if is_segmented_reload:
-			# Shell-by-shell thumb insertion into bottom loading gate (Mastiff / 30-30 Repeater)
+			# Mastiff & 30-30 Repeater: Shell-by-shell thumb insertion into loading gate
 			var sh_wave: float = sin(p * PI)
-			target_rot = Vector3(0.22, 0.24, 0.46)
-			if left_arm:
-				left_arm.position = Vector3(-0.02, -0.16 + sh_wave * 0.11, -0.06)
-				left_arm.rotation = Vector3(0.35 * sh_wave, 0.25, 0.0)
-		elif p < 0.32:
-			var t1: float = p / 0.32
-			target_rot = Vector3(0.24 * t1, 0.18 * t1, 0.52 * t1)
+			target_rot = Vector3(0.24, 0.28, 0.54)
 			if mag_pivot:
-				mag_pivot.position = Vector3(0, -0.14 - t1 * 0.28, base_mag_z)
-				mag_pivot.rotation.x = t1 * 0.65
+				mag_pivot.position = base_mag_pos + Vector3(0, -0.04 * (1.0 - sh_wave), 0.03 * sh_wave)
 			if left_arm:
-				left_arm.position = Vector3(-0.04, -0.14 - t1 * 0.18, base_mag_z)
-		elif p < 0.68:
-			var t2: float = (p - 0.32) / 0.36
-			var snap_t: float = clampf(t2 * 1.25, 0.0, 1.0)
-			target_rot = Vector3(0.24, 0.18, 0.52)
-			if mag_pivot:
-				mag_pivot.position = Vector3(0, lerpf(-0.42, -0.14, snap_t), base_mag_z)
-				mag_pivot.rotation.x = lerpf(0.5, 0.0, snap_t)
-			if left_arm:
-				left_arm.position = Vector3(-0.02, lerpf(-0.34, -0.12, snap_t), base_mag_z)
+				left_arm.position = Vector3(-0.02, -0.15 + sh_wave * 0.11, -0.05)
+				left_arm.rotation = Vector3(0.42 * sh_wave, 0.28, -0.18)
+		elif reload_style == "revolver_swing" or wid_cur == "wingman":
+			# Wingman Revolver: Swing cylinder out to left -> dump brass -> insert speedloader -> wrist flick close!
+			if p < 0.28:
+				var t1: float = p / 0.28
+				target_rot = Vector3(0.38 * t1, -0.18 * t1, -0.35 * t1)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos + Vector3(-0.046 * t1, -0.01 * t1, 0)
+					mag_pivot.rotation.z = 0.92 * t1
+				if left_arm:
+					left_arm.position = Vector3(-0.06, -0.04 - 0.12 * t1, -0.04)
+			elif p < 0.72:
+				var t2: float = (p - 0.28) / 0.44
+				var ins: float = sin(t2 * PI)
+				target_rot = Vector3(0.28, 0.15, 0.42)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos + Vector3(-0.046, 0, 0)
+					mag_pivot.rotation.z = 0.92
+					mag_pivot.rotation.y = t2 * PI
+				if left_arm:
+					left_arm.position = Vector3(-0.06, -0.16 + ins * 0.16, -0.02 - ins * 0.04)
+					left_arm.rotation = Vector3(0.35 * ins, 0.30, 0.0)
+			else:
+				var t3: float = (p - 0.72) / 0.28
+				var flick: float = sin(t3 * PI)
+				target_rot = Vector3(-0.15 * flick, 0.22 * flick, -0.68 * flick)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos.lerp(base_mag_pos + Vector3(-0.046, 0, 0), 1.0 - t3)
+					mag_pivot.rotation.z = lerpf(0.92, 0.0, t3)
+					mag_pivot.rotation.y = 0.0
+				if left_arm:
+					left_arm.position = Vector3(-0.055, -0.045, -0.14)
+		elif reload_style == "lever_shotgun" and wid_cur == "peacekeeper":
+			# Peacekeeper: Side-chamber energy cell swap + 360-degree lever-action flip cock!
+			if p < 0.64:
+				var tc: float = p / 0.64
+				var cell_arc: float = sin(tc * PI)
+				target_rot = Vector3(0.22, 0.24, 0.56)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos + Vector3(-0.14 * cell_arc, -0.12 * cell_arc, 0)
+				if left_arm:
+					left_arm.position = Vector3(-0.05 - 0.10 * cell_arc, -0.06 - 0.12 * cell_arc, -0.08)
+					left_arm.rotation = Vector3(0.35 * cell_arc, 0.40, -0.25)
+			else:
+				var tl: float = (p - 0.64) / 0.36
+				var flip_wave: float = sin(tl * PI)
+				target_rot = Vector3(0.45 * flip_wave, -0.15 * flip_wave, -0.28 * flip_wave)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos
+				if bolt_pivot:
+					bolt_pivot.rotation.x = tl * TAU
+				if left_arm:
+					left_arm.position = Vector3(-0.055, -0.045, -0.18)
 		else:
-			var t3: float = (p - 0.68) / 0.32
-			var pull: float = sin(t3 * PI)
-			target_rot = Vector3(0.10 * (1.0 - t3), -0.22 * pull, -0.38 * pull)
-			if mag_pivot:
-				mag_pivot.position = Vector3(0, -0.14, base_mag_z)
-				mag_pivot.rotation = Vector3.ZERO
-			if bolt_pivot:
-				bolt_pivot.position.z = -0.04 + pull * 0.11
-			if left_arm:
-				left_arm.position = Vector3(-0.05, 0.02 * pull - 0.04, -0.08 + pull * 0.10)
+			# Standard AR / SMG / LMG / Bullpup / Sniper 3-Stage Choreographed Reload
+			if p < 0.32:
+				var t1: float = p / 0.32
+				target_rot = Vector3(0.28 * t1, (-0.24 if is_bullpup else 0.18) * t1, 0.54 * t1)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos + Vector3(0, -t1 * 0.28, 0)
+					mag_pivot.rotation.x = t1 * 0.62
+				if left_arm:
+					left_arm.position = Vector3(-0.04, -0.14 - t1 * 0.18, base_mag_pos.z)
+					left_arm.rotation = Vector3(0.25 * t1, 0.20, -0.25 * t1)
+			elif p < 0.68:
+				var t2: float = (p - 0.32) / 0.36
+				var snap_t: float = clampf(t2 * 1.25, 0.0, 1.0)
+				target_rot = Vector3(0.28, -0.24 if is_bullpup else 0.18, 0.54)
+				if mag_pivot:
+					mag_pivot.position = Vector3(base_mag_pos.x, lerpf(base_mag_pos.y - 0.28, base_mag_pos.y, snap_t), base_mag_pos.z)
+					mag_pivot.rotation.x = lerpf(0.52, 0.0, snap_t)
+				if left_arm:
+					left_arm.position = Vector3(-0.02, lerpf(-0.34, -0.12, snap_t), base_mag_pos.z)
+					left_arm.rotation = Vector3(0.28 * (1.0 - snap_t), 0.25, -0.15)
+			else:
+				var t3: float = (p - 0.68) / 0.32
+				var pull: float = sin(t3 * PI)
+				target_rot = Vector3(0.12 * (1.0 - t3), -0.24 * pull, -0.42 * pull)
+				if mag_pivot:
+					mag_pivot.position = base_mag_pos
+					mag_pivot.rotation = Vector3.ZERO
+				if bolt_pivot:
+					bolt_pivot.position.z = -0.04 + pull * 0.12
+					if reload_style == "bolt_sniper":
+						bolt_pivot.rotation.z = -pull * 0.85
+				if left_arm:
+					left_arm.position = Vector3(-0.05, 0.02 * pull - 0.04, -0.08 + pull * 0.11)
+					left_arm.rotation = Vector3(0.32 * pull, 0.22 * pull, 0.0)
 	elif not is_bow:
 		if mag_pivot:
-			mag_pivot.position = mag_pivot.position.lerp(Vector3(0, -0.14, base_mag_z), delta * 16.0)
+			mag_pivot.position = mag_pivot.position.lerp(base_mag_pos, delta * 16.0)
 			mag_pivot.rotation = mag_pivot.rotation.lerp(Vector3.ZERO, delta * 16.0)
 		if bolt_pivot:
 			if rechamber_timer > 0.0:
 				var rp: float = 1.0 - (rechamber_timer / maxf(0.01, rechamber_total))
 				var r_wave: float = sin(rp * PI)
 				if wid_cur == "peacekeeper" or wid_cur == "repeater3030":
-					# Lever-action spin / cock
-					bolt_pivot.rotation.x = r_wave * 0.95
-					target_rot.x += r_wave * 0.26
+					bolt_pivot.rotation.x = r_wave * 1.15
+					target_rot.x += r_wave * 0.28
+					target_rot.z -= r_wave * 0.18
 				elif wid_cur == "mastiff":
-					# Pump forend slide back & forth
-					bolt_pivot.position.z = -0.22 + r_wave * 0.10
+					bolt_pivot.position.z = -0.22 + r_wave * 0.11
 					if left_arm:
-						left_arm.position.z = -0.18 + r_wave * 0.10
+						left_arm.position.z = -0.18 + r_wave * 0.11
 				else:
-					bolt_pivot.position.z = -0.04 + r_wave * 0.12
-					bolt_pivot.rotation.z = -r_wave * 0.85
-					target_rot.z += r_wave * 0.22
+					bolt_pivot.position.z = -0.04 + r_wave * 0.13
+					bolt_pivot.rotation.z = -r_wave * 0.90
+					target_rot.z += r_wave * 0.24
 			else:
-				var base_bolt_z: float = -0.22 if wid_cur == "mastiff" else -0.04
+				var base_bolt_z: float = -0.22 if wid_cur == "mastiff" else (0.06 if (wid_cur == "peacekeeper" or wid_cur == "repeater3030") else -0.04)
 				bolt_pivot.position.z = base_bolt_z + bolt_back_offset
 				bolt_pivot.rotation = bolt_pivot.rotation.lerp(Vector3.ZERO, delta * 16.0)
 		if left_arm and not is_heirloom:
-			left_arm.position = left_arm.position.lerp(Vector3(-0.06, -0.05, -0.18), delta * 14.0)
+			var target_la_pos := Vector3(-0.055, -0.045, -0.18)
+			var target_la_rot := Vector3.ZERO
+			if player.is_sliding:
+				target_la_pos = Vector3(-0.095, -0.09, -0.14)
+				target_la_rot = Vector3(0.22, 0.18, -0.35)
+			left_arm.position = left_arm.position.lerp(target_la_pos, delta * 14.0)
+			left_arm.rotation = left_arm.rotation.lerp(target_la_rot, delta * 14.0)
 		if right_arm and not is_heirloom:
-			var rec_len_cur: float = float(GameData.get_weapon_by_id(wid_cur).get("rec_len", 0.48))
+			var rec_len_cur: float = float(wep_cur.get("rec_len", 0.48))
 			right_arm.position = right_arm.position.lerp(Vector3(0.02, -0.10, rec_len_cur * 0.22), delta * 14.0)
 			right_arm.rotation = right_arm.rotation.lerp(Vector3.ZERO, delta * 14.0)
 
@@ -631,8 +749,6 @@ func _animate_viewmodel(delta: float) -> void:
 		if left_arm:
 			left_arm.position = Vector3(-0.08 + 0.22 * thrust, 0.04 * thrust, -0.18 - 0.38 * thrust)
 			left_arm.rotation = Vector3(0.55 * thrust, 0.45 * thrust, -0.35 * thrust)
-	elif left_arm and not is_heirloom and reload_timer <= 0.0:
-		left_arm.rotation = left_arm.rotation.lerp(Vector3.ZERO, delta * 14.0)
 
 	# =========================================================================
 	# 4. HEIRLOOM 3-STAGE SLASH COMBO & WEAPON INSPECT
@@ -648,7 +764,7 @@ func _animate_viewmodel(delta: float) -> void:
 					right_arm.position = Vector3(-arc * 0.22, arc * 0.08, -arc * 0.22)
 					right_arm.rotation = Vector3(arc * 0.45, arc * 0.85, -arc * 0.55)
 				if left_arm:
-					left_arm.position = Vector3(-0.26 - arc * 0.10, -0.14 + arc * 0.12, -0.10 - arc * 0.18)
+					left_arm.position = Vector3(-0.24 - arc * 0.10, -0.13 + arc * 0.12, -0.10 - arc * 0.18)
 					left_arm.rotation = Vector3(arc * 0.40, -arc * 0.45, arc * 0.30)
 			elif melee_combo_idx == 1:
 				heirloom_pivot.rotation = Vector3(0.32 - arc * 1.15, -0.28 - arc * 1.6, 0.18 + arc * 1.3)
@@ -657,7 +773,7 @@ func _animate_viewmodel(delta: float) -> void:
 					right_arm.position = Vector3(arc * 0.20, arc * 0.12, -arc * 0.20)
 					right_arm.rotation = Vector3(-arc * 0.35, -arc * 0.85, arc * 0.65)
 				if left_arm:
-					left_arm.position = Vector3(-0.26 + arc * 0.28, -0.14 + arc * 0.22, -0.10 - arc * 0.36)
+					left_arm.position = Vector3(-0.24 + arc * 0.28, -0.13 + arc * 0.22, -0.10 - arc * 0.36)
 					left_arm.rotation = Vector3(arc * 0.65, arc * 0.55, -arc * 0.40)
 			else:
 				heirloom_pivot.rotation = Vector3(0.32 + arc * 1.5, -0.28, 0.18 + sp * TAU)
@@ -673,7 +789,7 @@ func _animate_viewmodel(delta: float) -> void:
 				right_arm.position = right_arm.position.lerp(Vector3.ZERO, delta * 12.0)
 				right_arm.rotation = right_arm.rotation.lerp(Vector3.ZERO, delta * 12.0)
 			if left_arm:
-				left_arm.position = left_arm.position.lerp(Vector3(-0.26, -0.14, -0.10), delta * 12.0)
+				left_arm.position = left_arm.position.lerp(Vector3(-0.24, -0.13, -0.10), delta * 12.0)
 				left_arm.rotation = left_arm.rotation.lerp(Vector3(0, 0, sin(player.bob_time * 0.5) * 0.08), delta * 12.0)
 			if inspect_timer > 0.0 or sprinting:
 				var spin_t: float = float(Time.get_ticks_msec()) * 0.012
@@ -700,11 +816,12 @@ func try_fire(enemies_list: Array) -> void:
 		_perform_heirloom_slash(enemies_list)
 		return
 
-	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+	var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
+	var slot: Dictionary = PlayerState.loadout[slot_idx]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 	var wid: String = str(wep["id"])
+	var cat: String = str(wep.get("cat", "AR"))
 
-	# Bocek Compound Bow is handled by hold-and-release in _update_bocek_bow()
 	if wid == "bocek":
 		return
 
@@ -721,7 +838,7 @@ func try_fire(enemies_list: Array) -> void:
 		if is_charging_beam:
 			return
 		var now_cr: int = Time.get_ticks_msec()
-		if now_cr - last_fire_ms < 1150:
+		if now_cr - last_fire_ms < 1100:
 			return
 		if int(slot["ammo"]) <= 0:
 			start_reload()
@@ -738,78 +855,112 @@ func try_fire(enemies_list: Array) -> void:
 		return
 
 	var rpm: float = float(wep["rpm"])
-	if wid == "rampage" and float(slot.get("charged", 0.0)) > 0.0:
+	if cat == "SHOTGUN":
+		var bolt_t: int = maxi(int(slot.get("bolt", 0)), int(slot.get("mag", 0)))
+		rpm *= GameData.get_shotgun_bolt_fire_mult(bolt_t)
+	elif wid == "rampage" and float(slot.get("charged", 0.0)) > 0.0:
 		rpm *= 1.38
 	elif wid == "nemesis":
 		rpm *= (1.0 + nemesis_energy_charge * 0.32)
 	elif wid == "devotion":
-		rpm *= lerpf(0.58, 1.0, devotion_spinup)
+		rpm *= lerpf(0.55, 1.0, devotion_spinup)
 
 	var now: int = Time.get_ticks_msec()
 	if now - last_fire_ms < int(60000.0 / rpm):
 		return
 
-	if int(slot["ammo"]) <= 0:
+	# L-STAR EMG draws directly from energy reserve or mag with overheat protection
+	if wid == "lstar":
+		if lstar_heat >= 0.98:
+			start_reload()
+			return
+		if int(slot["ammo"]) <= 0 and PlayerState.get_reserve_ammo("energy") <= 0 and PlayerState.selected_mode_id != "firing_range":
+			PlayerState.toast_pushed.emit("⚠️ 能量备弹耗尽！", "warn")
+			return
+	elif int(slot["ammo"]) <= 0:
 		start_reload()
 		return
 
 	var b_cnt: int = int(wep.get("burst_count", 1))
 	if b_cnt > 1:
 		burst_shots_remaining = maxi(0, mini(b_cnt, int(slot["ammo"])) - 1)
-		burst_next_shot_timer = 0.052
+		burst_next_shot_timer = 0.048
 
 	_execute_single_shot(enemies_list, false)
 
 
 func _execute_single_shot(enemies_list: Array, is_burst_followup: bool = false) -> void:
-	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
-	if int(slot["ammo"]) <= 0:
-		burst_shots_remaining = 0
-		return
-
+	var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
+	var slot: Dictionary = PlayerState.loadout[slot_idx]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 	var wid: String = str(wep["id"])
 	var cat: String = str(wep["cat"])
 
-	slot["ammo"] = int(slot["ammo"]) - 1
+	if wid == "lstar":
+		if PlayerState.selected_mode_id != "firing_range":
+			if PlayerState.get_reserve_ammo("energy") > 0:
+				PlayerState.deduct_ammo("energy", 1)
+			elif int(slot["ammo"]) > 0:
+				slot["ammo"] = int(slot["ammo"]) - 1
+			else:
+				return
+		lstar_heat = clampf(lstar_heat + 0.042, 0.0, 1.0)
+		if lstar_heat >= 0.99:
+			PlayerState.toast_pushed.emit("🔥 L-STAR 等离子核心过热！正在更换散热透镜...", "warn")
+			start_reload()
+	else:
+		if int(slot["ammo"]) <= 0:
+			burst_shots_remaining = 0
+			return
+		var ammo_cost: int = 1
+		slot["ammo"] = maxi(0, int(slot["ammo"]) - ammo_cost)
+
 	last_fire_ms = Time.get_ticks_msec()
 	consecutive_shots += 1
 	if wid == "devotion":
 		devotion_spinup = clampf(devotion_spinup + 0.14, 0.0, 1.0)
 	elif wid == "nemesis":
-		nemesis_energy_charge = clampf(nemesis_energy_charge + 0.08, 0.0, 1.0)
+		nemesis_energy_charge = clampf(nemesis_energy_charge + 0.09, 0.0, 1.0)
 
 	AudioSynthesizer.play_gunshot(cat, wid)
 
-	# Trigger Muzzle Flash, Authentic Apex Recoil Pattern & Bolt Blowback
-	kick_offset = Vector3(0, 0.012, 0.055 if cat != "SHOTGUN" else 0.082)
-	kick_rot = Vector3(0.065 if cat != "SHOTGUN" else 0.11, randf_range(-0.018, 0.018), 0.0)
+	# Barrel stabilizer attachment reduces recoil kick
+	var barrel_tier: int = int(slot.get("barrel", 0))
+	var rec_mult: float = 1.0 - float(barrel_tier) * 0.08
+
+	kick_offset = Vector3(0, 0.012, 0.052 if cat != "SHOTGUN" else 0.080) * rec_mult
+	kick_rot = Vector3(0.062 if cat != "SHOTGUN" else 0.105, randf_range(-0.016, 0.016), 0.0) * rec_mult
 	bolt_back_offset = 0.095
-	var v_rec: float = 0.032 if cat == "SNIPER" else (0.026 if cat == "SHOTGUN" else 0.010)
-	var h_pat: float = sin(float(consecutive_shots) * 0.65) * 0.005
+	var v_rec: float = (0.030 if cat == "SNIPER" else (0.024 if cat == "SHOTGUN" else 0.009)) * rec_mult
+	var h_pat: float = sin(float(consecutive_shots) * 0.65) * 0.004 * rec_mult
 	player.add_camera_recoil(v_rec, h_pat, 0.012)
 
 	_trigger_muzzle_flash_and_casing()
 
-	# Rechamber / Lever-Action / Pump-Action Timing
+	# Rechamber / Lever-Action / Pump-Action Timing (Accelerated by Shotgun Bolt on Peacekeeper & Mastiff!)
+	var bolt_mult: float = 1.0
+	if cat == "SHOTGUN":
+		var bolt_t: int = maxi(int(slot.get("bolt", 0)), int(slot.get("mag", 0)))
+		bolt_mult = GameData.get_shotgun_bolt_fire_mult(bolt_t)
+
 	if wid == "kraber":
-		rechamber_total = 0.85
+		rechamber_total = 0.82
 		rechamber_timer = rechamber_total
 		AudioSynthesizer.play_reload_step("bolt_slap")
 	elif wid == "sentinel":
-		rechamber_total = 0.62
+		rechamber_total = 0.58
 		rechamber_timer = rechamber_total
 		AudioSynthesizer.play_reload_step("bolt_slap")
 	elif wid == "peacekeeper":
-		rechamber_total = 0.58
+		rechamber_total = 0.56 / bolt_mult
 		rechamber_timer = rechamber_total
 		AudioSynthesizer.play_reload_step("lever_cock")
 	elif wid == "mastiff":
-		rechamber_total = 0.42
+		rechamber_total = 0.40 / bolt_mult
 		rechamber_timer = rechamber_total
 		AudioSynthesizer.play_reload_step("pump_action")
 
-	# Ballistic Calculation + Authentic Shotgun / Multi-Pellet Pattern
+	# Ballistic Calculation + Authentic Unit-Normalized Shotgun / Multi-Pellet Pattern
 	var cam := player.camera
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
@@ -817,46 +968,44 @@ func _execute_single_shot(enemies_list: Array, is_burst_followup: bool = false) 
 	var cam_up: Vector3 = cam.global_transform.basis.y
 
 	var spread: float = float(wep["ads_spread"]) if player.is_ads else float(wep["spread"])
-	# Apply Precision Choke tightening for Peacekeeper & Triple Take
 	if bool(wep.get("has_choke", false)) and player.is_ads:
-		spread *= lerpf(1.0, 0.30, choke_progress)
+		spread *= lerpf(1.0, 0.25, choke_progress)
 
 	var pellets: int = int(wep.get("pellets", 1))
 	var pattern_name: String = str(wep.get("pellet_pattern", "single"))
-	var pattern_offsets: Array = GameData.get_pellet_pattern_offsets(pattern_name, pellets)
+	var pattern_offsets: Array = GameData.get_pellet_pattern_offsets(pattern_name, 1.0)
 
 	var total_hit_dmg: int = 0
 	var hit_bot: ApexBotAI = null
 	var was_head: bool = false
-	var primary_hit_pos: Vector3 = origin + fwd * 120.0
 	var pellet_hit_flags: Array = []
 
 	for p in range(pellets):
 		var ray_dir: Vector3 = fwd
 		if pellets > 1 and p < pattern_offsets.size():
 			var po: Vector2 = pattern_offsets[p]
-			# Mastiff ADS tightens horizontal spread specifically
-			var sx: float = spread * (0.62 if (wid == "mastiff" and player.is_ads) else 1.0)
-			var sy: float = spread
+			var sx: float = spread * (0.58 if (wid == "mastiff" and player.is_ads) else 1.0)
+			var sy: float = spread * (0.45 if (wid == "mastiff" and player.is_ads) else 1.0)
 			ray_dir = (fwd + cam_right * (po.x * sx) + cam_up * (po.y * sy)).normalized()
 		else:
 			ray_dir = (fwd + cam_right * randf_range(-spread, spread) + cam_up * randf_range(-spread, spread)).normalized()
 
-		var hit_res: Dictionary = _cast_ballistic_ray(origin, ray_dir, 340.0)
+		var hit_res: Dictionary = _cast_ballistic_ray(origin, ray_dir, 340.0, pellets > 1)
 		var p_pos: Vector3 = hit_res["hit_pos"]
 		var p_bot: ApexBotAI = hit_res["hit_bot"]
 		var p_head: bool = hit_res["was_head"]
 
-		if p == 0 or p_bot != null:
-			primary_hit_pos = p_pos
-
 		if p_bot != null:
 			pellet_hit_flags.append(true)
 			var d: int = int(wep["dmg"])
-			if wid == "sentinel" and float(slot.get("charged", 0.0)) > 0.0:
-				d = int(round(float(d) * 1.25))
+			if wid == "repeater3030" and repeater_charge > 0.05:
+				d = int(round(lerpf(float(d), float(wep.get("max_charge_dmg", 60)), repeater_charge)))
+			elif wid == "sentinel" and float(slot.get("charged", 0.0)) > 0.0:
+				d = int(wep.get("amped_dmg", 92))
+			elif wid == "r301" and player.is_ads and str(slot.get("hopup", "")) == "anvil":
+				d = int(round(float(d) * 1.15))
 			# Hammerpoint Rounds bonus against unshielded flesh (Mozambique, P2020, RE-45, EVA-8)
-			if (wid == "mozambique" or wid == "p2020") and p_bot.shield <= 0.0:
+			if (wid == "mozambique" or wid == "p2020" or wid == "re45") and p_bot.shield <= 0.0:
 				d = int(round(float(d) * 1.35))
 			if p_head:
 				d = int(round(float(d) * float(wep["head"])))
@@ -866,9 +1015,11 @@ func _execute_single_shot(enemies_list: Array, is_burst_followup: bool = false) 
 		else:
 			pellet_hit_flags.append(false)
 
-		# Spawn visual tracer for each shotgun pellet (or single bullet)
 		if pellets <= 3 or p % 2 == 0 or p_bot != null:
-			_spawn_bullet_tracer(origin + Vector3(0, -0.09, 0) + fwd * 0.75, p_pos, wep.get("accent", Color("#f97316")))
+			_spawn_bullet_tracer(origin + Vector3(0, -0.08, 0) + fwd * 0.72, p_pos, wep.get("accent", Color("#f97316")))
+
+	if wid == "repeater3030":
+		repeater_charge = 0.0
 
 	if pellets > 1:
 		PlayerState.shotgun_pellet_feedback_pushed.emit(pattern_name, pellet_hit_flags, was_head)
@@ -897,7 +1048,7 @@ func _perform_heirloom_slash(enemies_list: Array) -> void:
 	var h_info: Dictionary = leg.get("heirloom", {"name": "传家宝近战", "color": Color("#8b5cf6")})
 	_spawn_melee_slash_wave(h_info.get("color", Color("#8b5cf6")))
 
-	var dmg: int = 65 if is_heavy_finisher else 45
+	var dmg: int = 75 if is_heavy_finisher else 50
 	_check_melee_hit(enemies_list, dmg, str(h_info.get("name", "传家宝")))
 	melee_combo_idx = (melee_combo_idx + 1) % 3
 	PlayerState.state_updated.emit()
@@ -911,7 +1062,7 @@ func start_quick_melee(enemies_list: Array) -> void:
 	var fwd: Vector3 = -player.camera.global_transform.basis.z
 	player.velocity += Vector3(fwd.x, 0.12, fwd.z).normalized() * 6.2
 	player.add_camera_recoil(0.015, -0.015, 0.02)
-	_check_melee_hit(enemies_list, 30, "近战重击 [V]")
+	_check_melee_hit(enemies_list, 35, "近战重击 [V]")
 
 
 func _check_melee_hit(enemies_list: Array, dmg: int, source_label: String) -> void:
@@ -921,9 +1072,8 @@ func _check_melee_hit(enemies_list: Array, dmg: int, source_label: String) -> vo
 		if not is_instance_valid(bot) or bot.hp <= 0.0:
 			continue
 		var to_bot: Vector3 = (bot.global_position + Vector3(0, 1.1, 0)) - origin
-		if to_bot.length() <= 4.2 and fwd.angle_to(to_bot.normalized()) < 0.62:
-			# Verify no wall between player and melee target
-			var ray_res: Dictionary = _cast_ballistic_ray(origin, to_bot.normalized(), to_bot.length() + 0.5)
+		if to_bot.length() <= 4.2 and fwd.angle_to(to_bot.normalized()) < 0.65:
+			var ray_res: Dictionary = _cast_ballistic_ray(origin, to_bot.normalized(), to_bot.length() + 0.5, false)
 			if ray_res["hit_bot"] == bot or not ray_res["hit_wall"]:
 				bot.apply_damage(dmg, false, source_label)
 				bot.velocity += Vector3(fwd.x, 0.25, fwd.z).normalized() * 8.5
@@ -935,26 +1085,38 @@ func start_reload() -> void:
 		return
 	_cancel_charge_beam()
 	burst_shots_remaining = 0
-	var slot: Dictionary = PlayerState.loadout[PlayerState.active_slot]
+	var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
+	PlayerState.recalculate_weapon_slot(slot_idx, false)
+	var slot: Dictionary = PlayerState.loadout[slot_idx]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 	var wid: String = str(wep["id"])
-	if wid == "bocek" or wid == "lstar":
+	if wid == "bocek":
 		return
+	if wid == "lstar":
+		if lstar_heat <= 0.1:
+			return
+		lstar_heat = 0.0
+		reload_total = 1.85
+		reload_timer = reload_total
+		reload_step_mask = 0
+		return
+
 	if int(slot["ammo"]) >= int(slot["max_ammo"]):
 		return
 	var ammo_key: String = str(wep["ammo"])
 	PlayerState.sync_ammo_reserve_from_inventory()
-	if PlayerState.selected_mode_id != "firing_range" and int(PlayerState.ammo_reserve.get(ammo_key, 0)) <= 0:
+	if PlayerState.selected_mode_id != "firing_range" and PlayerState.get_reserve_ammo(ammo_key) <= 0:
 		PlayerState.toast_pushed.emit("⚠️ 备弹耗尽！背包内无【%s】弹药" % _get_ammo_name(ammo_key), "warn")
 		return
 
 	is_empty_reload = (int(slot["ammo"]) <= 0)
 	is_segmented_reload = bool(wep.get("segmented_reload", false))
+	var stock_tier: int = maxi(int(slot.get("stock", 0)), int(slot.get("stock_tier", 0)))
+	var stock_mult: float = 1.0 - float(stock_tier) * 0.07
+
 	if is_segmented_reload:
-		reload_total = 0.52 if wid == "mastiff" else 0.45
+		reload_total = (0.44 if wid == "mastiff" else 0.38) * stock_mult
 	else:
-		var stock_tier: int = int(slot.get("stock_tier", 0))
-		var stock_mult: float = 1.0 - float(stock_tier) * 0.06
 		reload_total = float(wep["reload"]) * (1.0 if is_empty_reload else 0.82) * stock_mult
 	if PlayerState.stim_timer > 0.0 or PlayerState.double_time_timer > 0.0:
 		reload_total *= 0.78
@@ -1087,8 +1249,7 @@ func _update_charge_rifle(delta: float) -> void:
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
 
-	# Use true physics raycast + capsule check (no wall penetration!)
-	var hit_info: Dictionary = _cast_ballistic_ray(origin, fwd, 280.0)
+	var hit_info: Dictionary = _cast_ballistic_ray(origin, fwd, 280.0, false)
 	var target_pos: Vector3 = hit_info["hit_pos"]
 	var hit_bot: ApexBotAI = hit_info["hit_bot"]
 	var was_head: bool = hit_info["was_head"]
@@ -1104,7 +1265,7 @@ func _update_charge_rifle(delta: float) -> void:
 		if charge_timer - charge_last_tick >= 0.14:
 			charge_last_tick = charge_timer
 			if hit_bot != null:
-				var tick_dmg: int = 6 if was_head else 4
+				var tick_dmg: int = 8 if was_head else 5
 				hit_bot.apply_damage(tick_dmg, was_head, "充能步枪 滋")
 				_spawn_charge_impact_sparks(target_pos, Color("#ff6600"))
 				PlayerState.state_updated.emit()
@@ -1130,7 +1291,7 @@ func _update_charge_rifle(delta: float) -> void:
 		_spawn_charge_impact_burst(target_pos)
 
 		if hit_bot != null:
-			var blast_dmg: int = 115 if was_head else 75
+			var blast_dmg: int = 128 if was_head else 82
 			hit_bot.apply_damage(blast_dmg, was_head, "充能步枪 崩💥")
 
 		PlayerState.state_updated.emit()
@@ -1247,4 +1408,3 @@ func _get_ammo_name(ammo_key: String) -> String:
 		"arrows": return "箭矢"
 		"mythic": return "神话专属弹药"
 		_: return ammo_key
-

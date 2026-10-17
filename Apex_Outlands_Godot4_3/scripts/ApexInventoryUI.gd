@@ -3,11 +3,13 @@ extends Control
 ## ============================================================================
 ## APEX LEGENDS AUTHENTIC GRAPHICAL INVENTORY & DEATHBOX LOOTING SYSTEM
 ## Fixes & Upgrades:
-## - Fixes Deathbox item pickup (`PlayerState.add_loot_item(it)`) so picking up Ammo, Shield Batteries,
-##   Shield Cells, Medkits, Syringes, Phoenix Kits, Ordnance, or Attachments from a Deathbox properly
-##   increments `PlayerState.ammo_reserve`, `PlayerState.consumables`, `PlayerState.ordnance`, and `inventory_items`!
-## - Adds a 10-slot (2x5) Deathbox grid + One-Click [⚡ 一键拾取全部物资 (LOOT ALL)] button in the Deathbox header!
-## - Supports Arrows (`arrows`) ammo badge and all 28 weapons across 7 categories.
+## - 100% Real-Time Synchronization between Backpack Stacks (`PlayerState.inventory_items`),
+##   Reserve Ammo (`PlayerState.get_reserve_ammo`), Weapon Magazines (`ammo` / `max_ammo`),
+##   Consumables, and Ordnance!
+## - Detaching or swapping an Extended Magazine (`mag`) dynamically recalculates `max_ammo`
+##   and refunds any excess bullets back into the backpack (`PlayerState.recalculate_weapon_slot`)!
+## - Supports Shotgun Bolts (`bolt`) on Shotguns (`peacekeeper`, `mastiff`, `eva8`, `mozambique`)
+##   and Extended Magazines (`mag`) on AR/SMG/LMG/Marksman/Sniper/Pistol.
 ## ============================================================================
 
 signal closed
@@ -39,6 +41,8 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(1280, 720)
 
 func open() -> void:
+	PlayerState.recalculate_all_weapon_slots(true)
+	PlayerState.sync_ammo_reserve_from_inventory()
 	visible = true
 	PlayerState.inventory_open = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -51,6 +55,8 @@ func open_deathbox(dbox: Dictionary) -> void:
 	open()
 
 func close() -> void:
+	PlayerState.recalculate_all_weapon_slots(true)
+	PlayerState.sync_ammo_reserve_from_inventory()
 	visible = false
 	is_deathbox_mode = false
 	deathbox_data = {}
@@ -188,7 +194,6 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 			}
 			return
 
-		# Check Deathbox Items Grid (2 cols x 5 rows = up to 10 items)
 		var d_items: Array = deathbox_data.get("items", [])
 		var d_start_x: float = 42.0
 		var d_start_y: float = 238.0
@@ -231,12 +236,16 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 		for a_i in range(att_types.size()):
 			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (slot_sz + gap), att_y, slot_sz, slot_sz)
 			if ar.has_point(mpos):
+				var ak_key: String = att_types[a_i]
+				var t_val: int = int(slot_data.get(ak_key, 0))
+				if ak_key == "mag":
+					t_val = maxi(t_val, int(slot_data.get("bolt", 0)))
 				hovered_slot = {
 					"kind": "attachment",
 					"wep_idx": w_idx,
-					"att_type": att_types[a_i],
-					"tier": int(slot_data.get(att_types[a_i], 0)),
-					"optic_id": str(slot_data.get("optic", "2x_bruiser")) if att_types[a_i] == "optic" else ""
+					"att_type": ak_key,
+					"tier": t_val,
+					"optic_id": str(slot_data.get("optic", "2x_bruiser")) if ak_key == "optic" else ""
 				}
 				return
 		if wr.has_point(mpos):
@@ -308,7 +317,6 @@ func _execute_armor_swap() -> void:
 	queue_redraw()
 
 func _execute_deathbox_loot_all() -> void:
-	## Looting all non-weapon items (and equipping weapons if an empty slot exists) with 1 click!
 	if deathbox_data.is_empty():
 		return
 	if not bool(deathbox_data.get("armor_swapped", false)):
@@ -333,6 +341,7 @@ func _execute_deathbox_loot_all() -> void:
 					"optic": "2x_bruiser",
 					"charged": 0.0
 				}).duplicate(true)
+				PlayerState.recalculate_weapon_slot(empty_slot, true)
 				weapon_swapped.emit(empty_slot, empty_slot)
 			else:
 				remaining.append(it)
@@ -342,6 +351,8 @@ func _execute_deathbox_loot_all() -> void:
 		else:
 			PlayerState.add_loot_item(it)
 	deathbox_data["items"] = remaining
+	PlayerState.recalculate_all_weapon_slots(true)
+	PlayerState.sync_ammo_reserve_from_inventory()
 	AudioSynthesizer.play_reload_step("mag_in")
 	PlayerState.toast_pushed.emit("📦 已一键搜刮死亡之箱内全部弹药、电池、医疗品与配件！", "evo")
 	PlayerState.state_updated.emit()
@@ -365,6 +376,7 @@ func _drop_weapon(w_idx: int, spawn_in_world: bool = true) -> void:
 		"optic": "",
 		"barrel": 0,
 		"mag": 0,
+		"bolt": 0,
 		"stock": 0,
 		"hopup": "",
 		"charged": 0.0
@@ -381,14 +393,20 @@ func _drop_weapon(w_idx: int, spawn_in_world: bool = true) -> void:
 	if spawn_in_world:
 		weapon_dropped.emit(w_idx, dropped_data)
 		PlayerState.toast_pushed.emit("🗑️ 已将【%s】丢弃至地面！" % str(wep_info.get("name", wid)), "info")
-	PlayerState.state_updated.emit()
+	PlayerState.sync_ammo_reserve_from_inventory()
 	queue_redraw()
 
 func _detach_attachment_to_inventory(w_idx: int, ak: String, drop_to_world: bool = false) -> void:
 	if w_idx < 0 or w_idx >= PlayerState.loadout.size():
 		return
 	var slot_data: Dictionary = PlayerState.loadout[w_idx]
+	var wid: String = str(slot_data.get("weapon_id", "empty"))
+	var wep_info: Dictionary = GameData.get_weapon_by_id(wid)
+	var is_shotgun: bool = (str(wep_info.get("cat", "")) == "SHOTGUN")
+
 	var tier: int = int(slot_data.get(ak, 0))
+	if ak == "mag":
+		tier = maxi(tier, int(slot_data.get("bolt", 0)))
 	var op_id: String = str(slot_data.get("optic", ""))
 
 	if ak == "optic" and op_id != "":
@@ -410,14 +428,21 @@ func _detach_attachment_to_inventory(w_idx: int, ak: String, drop_to_world: bool
 			})
 			PlayerState.toast_pushed.emit("📦 已卸下【%s】并放入背包" % opt_name, "info")
 		AudioSynthesizer.play_reload_step("lever_cock")
-		PlayerState.state_updated.emit()
+		PlayerState.sync_ammo_reserve_from_inventory()
 		queue_redraw()
 	elif tier > 0:
 		slot_data[ak] = 0
+		if ak == "mag":
+			slot_data["mag_tier"] = 0
+			slot_data["bolt"] = 0
+		elif ak == "stock":
+			slot_data["stock_tier"] = 0
+		PlayerState.recalculate_weapon_slot(w_idx, true)
+
 		var att_names: Dictionary = {
 			"barrel": "枪口补偿器",
-			"mag": "加长弹匣",
-			"stock": "标准枪托",
+			"mag": "霰弹枪枪栓" if is_shotgun else "加长弹匣",
+			"stock": "战术枪托",
 			"hopup": "专属枪械芯片"
 		}
 		var aname: String = "Lv.%d %s" % [tier, att_names.get(ak, "配件")]
@@ -433,7 +458,7 @@ func _detach_attachment_to_inventory(w_idx: int, ak: String, drop_to_world: bool
 			})
 			PlayerState.toast_pushed.emit("📦 已卸下【%s】并放入背包" % aname, "info")
 		AudioSynthesizer.play_reload_step("lever_cock")
-		PlayerState.state_updated.emit()
+		PlayerState.sync_ammo_reserve_from_inventory()
 		queue_redraw()
 
 func _equip_attachment_to_weapon(w_idx: int, att_item: Dictionary) -> void:
@@ -443,6 +468,9 @@ func _equip_attachment_to_weapon(w_idx: int, att_item: Dictionary) -> void:
 	var wid: String = str(slot_data.get("weapon_id", "empty"))
 	if wid == "empty":
 		return
+	var wep_info: Dictionary = GameData.get_weapon_by_id(wid)
+	var is_shotgun: bool = (str(wep_info.get("cat", "")) == "SHOTGUN")
+
 	var it_id: String = str(att_item.get("id", ""))
 	if it_id.begins_with("1x") or it_id.begins_with("2x") or it_id.begins_with("3x") or it_id.begins_with("4x") or it_id.begins_with("6x") or it_id.begins_with("optic"):
 		var old_op: String = str(slot_data.get("optic", ""))
@@ -460,21 +488,25 @@ func _equip_attachment_to_weapon(w_idx: int, att_item: Dictionary) -> void:
 		slot_data["barrel"] = tier
 		if old_t > 0:
 			PlayerState.inventory_items.append({"type": "attachment", "id": "barrel_%d" % old_t, "tier": old_t, "name": "Lv.%d 枪口补偿器" % old_t})
-	elif it_id.begins_with("mag"):
+	elif it_id.begins_with("mag") or it_id.begins_with("bolt"):
 		var tier: int = int(att_item.get("tier", 3))
-		var old_t: int = int(slot_data.get("mag", 0))
+		var old_t: int = maxi(int(slot_data.get("mag", 0)), int(slot_data.get("bolt", 0)))
 		slot_data["mag"] = tier
 		slot_data["mag_tier"] = tier
-		slot_data["max_ammo"] = GameData.get_weapon_mag_capacity(wid, tier)
+		if is_shotgun:
+			slot_data["bolt"] = tier
+		PlayerState.recalculate_weapon_slot(w_idx, true)
 		if old_t > 0:
-			PlayerState.inventory_items.append({"type": "attachment", "id": "mag_%d" % old_t, "tier": old_t, "name": "Lv.%d 加长弹匣" % old_t})
+			PlayerState.inventory_items.append({"type": "attachment", "id": "mag_%d" % old_t, "tier": old_t, "name": "Lv.%d %s" % [old_t, "霰弹枪枪栓" if is_shotgun else "加长弹匣"]})
 	elif it_id.begins_with("stock"):
 		var tier: int = int(att_item.get("tier", 3))
 		var old_t: int = int(slot_data.get("stock", 0))
 		slot_data["stock"] = tier
 		slot_data["stock_tier"] = tier
+		PlayerState.recalculate_weapon_slot(w_idx, true)
 		if old_t > 0:
 			PlayerState.inventory_items.append({"type": "attachment", "id": "stock_%d" % old_t, "tier": old_t, "name": "Lv.%d 标准枪托" % old_t})
+	PlayerState.sync_ammo_reserve_from_inventory()
 
 func _handle_drop(drop_pos: Vector2) -> void:
 	_update_hovered_slot(drop_pos)
@@ -492,12 +524,13 @@ func _handle_drop(drop_pos: Vector2) -> void:
 					PlayerState.active_slot = target_w_idx
 				elif PlayerState.active_slot == target_w_idx:
 					PlayerState.active_slot = drag_from_idx
+				PlayerState.recalculate_all_weapon_slots(true)
 				AudioSynthesizer.play_reload_step("bolt_slap")
 				var w1: Dictionary = GameData.get_weapon_by_id(str(PlayerState.loadout[drag_from_idx].get("weapon_id", "")))
 				var w2: Dictionary = GameData.get_weapon_by_id(str(PlayerState.loadout[target_w_idx].get("weapon_id", "")))
 				PlayerState.toast_pushed.emit("🔄 已交换武器槽位：【%s】↔【%s】" % [str(w1.get("name", "")), str(w2.get("name", ""))], "evo")
 				weapon_swapped.emit(drag_from_idx, target_w_idx)
-				PlayerState.state_updated.emit()
+				PlayerState.sync_ammo_reserve_from_inventory()
 				return
 		elif is_deathbox_mode and (target_kind == "deathbox_item" or target_kind == "deathbox_panel"):
 			var d_items: Array = deathbox_data.get("items", [])
@@ -507,6 +540,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				var db_item: Dictionary = hovered_slot["item"]
 				var db_w_data: Dictionary = db_item.get("weapon_data", {"weapon_id": db_item["id"], "ammo": db_item.get("ammo", 20), "max_ammo": 20})
 				PlayerState.loadout[drag_from_idx] = db_w_data.duplicate(true)
+				PlayerState.recalculate_weapon_slot(drag_from_idx, true)
 				db_item["id"] = wid
 				db_item["name"] = str(wep_info.get("name", wid))
 				db_item["weapon_data"] = drag_item.duplicate(true)
@@ -525,7 +559,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				_drop_weapon(drag_from_idx, false)
 				AudioSynthesizer.play_reload_step("mag_in")
 				PlayerState.toast_pushed.emit("📦 已将【%s】存入死亡之箱！" % str(wep_info.get("name", wid)), "evo")
-			PlayerState.state_updated.emit()
+			PlayerState.sync_ammo_reserve_from_inventory()
 			return
 		else:
 			_drop_weapon(drag_from_idx, true)
@@ -547,9 +581,15 @@ func _handle_drop(drop_pos: Vector2) -> void:
 					var temp_tier: int = int(dst_slot.get(ak, 0))
 					dst_slot[ak] = int(src_slot.get(ak, 0))
 					src_slot[ak] = temp_tier
+					if ak == "mag":
+						dst_slot["mag_tier"] = dst_slot[ak]
+						dst_slot["bolt"] = dst_slot[ak]
+						src_slot["mag_tier"] = src_slot[ak]
+						src_slot["bolt"] = src_slot[ak]
+				PlayerState.recalculate_all_weapon_slots(true)
+				PlayerState.sync_ammo_reserve_from_inventory()
 				AudioSynthesizer.play_reload_step("lever_cock")
 				PlayerState.toast_pushed.emit("🔧 已将配件转移至另一把武器！", "evo")
-				PlayerState.state_updated.emit()
 				return
 		elif target_kind == "item" or target_kind == "backpack_empty":
 			_detach_attachment_to_inventory(drag_from_idx, str(drag_item.get("att_type", "")), false)
@@ -558,7 +598,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			_detach_attachment_to_inventory(drag_from_idx, str(drag_item.get("att_type", "")), true)
 			return
 
-	# 3. Dragging from Deathbox (Properly syncs with PlayerState.add_loot_item!)
+	# 3. Dragging from Deathbox
 	elif drag_from_type == "deathbox":
 		var d_items: Array = deathbox_data.get("items", [])
 		if drag_item.get("type") == "weapon" and target_kind == "weapon":
@@ -586,10 +626,11 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			else:
 				d_items.remove_at(drag_from_idx)
 			PlayerState.loadout[target_w_idx] = new_data.duplicate(true)
+			PlayerState.recalculate_weapon_slot(target_w_idx, true)
+			PlayerState.sync_ammo_reserve_from_inventory()
 			AudioSynthesizer.play_reload_step("bolt_slap")
 			weapon_swapped.emit(target_w_idx, target_w_idx)
 			PlayerState.toast_pushed.emit("🔫 已从战利品箱装备【%s】！" % str(new_wep.get("name", new_wid)), "evo")
-			PlayerState.state_updated.emit()
 			return
 		elif drag_item.get("type") == "attachment" and target_kind == "weapon":
 			var target_w_idx: int = int(hovered_slot.get("wep_idx", 0))
@@ -597,7 +638,6 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			d_items.remove_at(drag_from_idx)
 			AudioSynthesizer.play_reload_step("lever_cock")
 			PlayerState.toast_pushed.emit("✨ 已装备战利品配件！", "evo")
-			PlayerState.state_updated.emit()
 			return
 		else:
 			if drag_from_idx >= 0 and drag_from_idx < d_items.size():
@@ -606,19 +646,17 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				d_items.remove_at(drag_from_idx)
 				AudioSynthesizer.play_reload_step("mag_in")
 				PlayerState.toast_pushed.emit("📦 已拾取战利品：【%s】 x%d" % [_get_item_display_name(str(it.get("id", "物资"))), int(it.get("count", 1))], "evo")
-				PlayerState.state_updated.emit()
 				return
 
 	# 4. Dragging from Backpack Inventory
 	elif drag_from_type == "inventory":
 		if drag_item.get("type") == "attachment" and target_kind == "weapon":
 			var target_w_idx: int = int(hovered_slot.get("wep_idx", 0))
-			_equip_attachment_to_weapon(target_w_idx, drag_item)
 			if drag_from_idx >= 0 and drag_from_idx < PlayerState.inventory_items.size():
 				PlayerState.inventory_items.remove_at(drag_from_idx)
+			_equip_attachment_to_weapon(target_w_idx, drag_item)
 			AudioSynthesizer.play_reload_step("lever_cock")
 			PlayerState.toast_pushed.emit("✨ 已将背包配件安装至武器！", "evo")
-			PlayerState.state_updated.emit()
 			return
 		elif target_kind == "item" or target_kind == "backpack_empty":
 			var target_idx: int = int(hovered_slot.get("index", -1))
@@ -632,13 +670,14 @@ func _handle_drop(drop_pos: Vector2) -> void:
 					PlayerState.inventory_items.remove_at(drag_from_idx)
 					PlayerState.inventory_items.append(it)
 				AudioSynthesizer.play_reload_step("lever_cock")
-				PlayerState.state_updated.emit()
+				PlayerState.sync_ammo_reserve_from_inventory()
 				return
 		elif target_kind == "weapon":
 			var w_idx: int = int(hovered_slot.get("wep_idx", 0))
 			var it_id: String = str(drag_item.get("id", ""))
 			var it_type: String = str(drag_item.get("type", ""))
 			if it_type == "ammo":
+				PlayerState.recalculate_weapon_slot(w_idx, false)
 				var target_slot: Dictionary = PlayerState.loadout[w_idx]
 				var wid_t: String = str(target_slot.get("weapon_id", "empty"))
 				if wid_t != "empty" and wid_t != "":
@@ -653,9 +692,9 @@ func _handle_drop(drop_pos: Vector2) -> void:
 							target_slot["ammo"] = cur_m + loaded
 							AudioSynthesizer.play_reload_step("mag_in")
 							PlayerState.toast_pushed.emit("🔫 已装填【%s】！当前弹匣：%d/%d (背包剩余备弹：%d)" % [
-								str(wep_t.get("name", wid_t)), target_slot["ammo"], max_m, PlayerState.ammo_reserve.get(it_id, 0)
+								str(wep_t.get("name", wid_t)), target_slot["ammo"], max_m, PlayerState.get_reserve_ammo(it_id)
 							], "evo")
-							PlayerState.state_updated.emit()
+							PlayerState.sync_ammo_reserve_from_inventory()
 							return
 						else:
 							PlayerState.toast_pushed.emit("【%s】弹匣已满 (%d/%d)" % [str(wep_t.get("name", wid_t)), cur_m, max_m], "info")
@@ -673,17 +712,21 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				return
 		elif target_kind == "":
 			var it_id: String = str(drag_item.get("id", ""))
+			var it_type: String = str(drag_item.get("type", ""))
 			var it_count: int = int(drag_item.get("count", 1))
 			AudioSynthesizer.play_reload_step("mag_out")
 			item_dropped.emit(it_id)
-			if it_count > 1:
+			if it_type == "ammo":
+				# Dropping an ammo stack removes the entire stack from backpack so HUD reserve matches 100%!
+				if drag_from_idx >= 0 and drag_from_idx < PlayerState.inventory_items.size():
+					PlayerState.inventory_items.remove_at(drag_from_idx)
+			elif it_count > 1:
 				drag_item["count"] = it_count - 1
 			else:
 				if drag_from_idx >= 0 and drag_from_idx < PlayerState.inventory_items.size():
 					PlayerState.inventory_items.remove_at(drag_from_idx)
 			PlayerState.sync_ammo_reserve_from_inventory()
 			PlayerState.toast_pushed.emit("📦 已丢弃物品：【%s】" % _get_item_display_name(it_id), "info")
-			PlayerState.state_updated.emit()
 
 func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 	if hovered_slot.is_empty():
@@ -771,6 +814,7 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				else:
 					d_items.remove_at(idx)
 				PlayerState.loadout[target_slot] = new_data.duplicate(true)
+				PlayerState.recalculate_weapon_slot(target_slot, true)
 				PlayerState.active_slot = target_slot
 				AudioSynthesizer.play_reload_step("bolt_slap")
 				weapon_swapped.emit(target_slot, target_slot)
@@ -782,12 +826,11 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				AudioSynthesizer.play_reload_step("lever_cock")
 				PlayerState.toast_pushed.emit("🔧 已拾取并安装配件：【%s】" % str(it.get("name", "配件")), "evo")
 			else:
-				# Use unified PlayerState.add_loot_item so ammo & consumables update properly!
 				PlayerState.add_loot_item(it)
 				d_items.remove_at(idx)
 				AudioSynthesizer.play_reload_step("mag_in")
 				PlayerState.toast_pushed.emit("📦 已拾取战利品：【%s】 x%d" % [_get_item_display_name(str(it.get("id", "物资"))), int(it.get("count", 1))], "evo")
-			PlayerState.state_updated.emit()
+			PlayerState.sync_ammo_reserve_from_inventory()
 			hovered_slot = {}
 			queue_redraw()
 		return
@@ -805,8 +848,8 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				consumable_used.emit(it_id)
 			elif it_type == "attachment":
 				var active_w_idx: int = clampi(PlayerState.active_slot, 0, 1)
-				_equip_attachment_to_weapon(active_w_idx, it)
 				PlayerState.inventory_items.remove_at(idx)
+				_equip_attachment_to_weapon(active_w_idx, it)
 				AudioSynthesizer.play_reload_step("lever_cock")
 				queue_redraw()
 			elif it_type == "ammo":
@@ -815,6 +858,7 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				for ws in try_slots:
 					if ws < 0 or ws >= PlayerState.loadout.size():
 						continue
+					PlayerState.recalculate_weapon_slot(ws, false)
 					var s_dict: Dictionary = PlayerState.loadout[ws]
 					var wid_s: String = str(s_dict.get("weapon_id", "empty"))
 					if wid_s == "empty" or wid_s == "":
@@ -830,9 +874,9 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 							reloaded = true
 							AudioSynthesizer.play_reload_step("mag_in")
 							PlayerState.toast_pushed.emit("🔫 已装填【%s】！当前弹匣：%d/%d (背包剩余备弹：%d)" % [
-								str(wep_s.get("name", wid_s)), s_dict["ammo"], max_m, PlayerState.ammo_reserve.get(it_id, 0)
+								str(wep_s.get("name", wid_s)), s_dict["ammo"], max_m, PlayerState.get_reserve_ammo(it_id)
 							], "evo")
-							PlayerState.state_updated.emit()
+							PlayerState.sync_ammo_reserve_from_inventory()
 							queue_redraw()
 							break
 				if not reloaded:
@@ -840,12 +884,14 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 		elif button_idx == MOUSE_BUTTON_RIGHT:
 			AudioSynthesizer.play_reload_step("mag_out")
 			item_dropped.emit(it_id)
-			if int(it.get("count", 1)) > 1:
+			if it_type == "ammo":
+				# Right-clicking an ammo stack drops the whole stack cleanly so backpack & HUD stay 100% synced!
+				PlayerState.inventory_items.remove_at(idx)
+			elif int(it.get("count", 1)) > 1:
 				it["count"] = int(it["count"]) - 1
 			else:
 				PlayerState.inventory_items.remove_at(idx)
 			PlayerState.sync_ammo_reserve_from_inventory()
-			PlayerState.state_updated.emit()
 			hovered_slot = {}
 			queue_redraw()
 
@@ -918,13 +964,11 @@ func _draw_deathbox_panel(_vp: Vector2) -> void:
 	var font := ThemeDB.fallback_font
 	draw_string(font, Vector2(52, 112), "💀 %s 的死亡之箱" % v_name, HORIZONTAL_ALIGNMENT_LEFT, 200, 15, Color.WHITE)
 
-	# One-Click Loot All Button in Header
 	var la_rect := Rect2(262, 92, 120, 28)
 	var is_la_hover: bool = (hovered_slot.get("kind", "") == "deathbox_loot_all")
 	_draw_rounded_slot_box(la_rect, Color(0.12, 0.35, 0.22, 0.95) if is_la_hover else Color(0.08, 0.22, 0.15, 0.90), Color("#22c55e"), 1.8)
 	draw_string(font, Vector2(la_rect.position.x + 10, la_rect.position.y + 19), "⚡ 一键全拾取", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#fde047") if is_la_hover else Color("#86efac"))
 
-	# One-Click Armor Swap Card
 	var ar_rect := Rect2(42, 135, 345, 75)
 	var is_ar_hover: bool = (hovered_slot.get("kind", "") == "deathbox_armor_swap")
 	_draw_rounded_slot_box(ar_rect, Color(0.08, 0.12, 0.19, 0.95), Color("#fbbf24") if is_ar_hover else (tier_col if not is_swapped else Color("#334155")), 2.5 if is_ar_hover else 1.8)
@@ -1041,11 +1085,12 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 			_draw_weapon_silhouette(sil_rect, str(wep.get("id", "")), str(wep.get("cat", "AR")), ammo_col)
 
 			var ammo_x: float = wr.position.x + wr.size.x - 72.0
-			var ammo_str: String = "%d" % int(slot_data.get("ammo", 0))
+			var res_cnt: int = PlayerState.get_reserve_ammo(ammo_type)
+			var disp_mag: int = res_cnt if wid == "bocek" else int(slot_data.get("ammo", 0))
+			var ammo_str: String = "%d" % disp_mag
 			var num_w := font.get_string_size(ammo_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 26).x
 			draw_string(font, Vector2(ammo_x + (44.0 - num_w) * 0.5, wr.position.y + 48), ammo_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
 
-			var res_cnt: int = int(PlayerState.ammo_reserve.get(ammo_type, 0))
 			var res_str: String = "/ %d" % res_cnt
 			draw_string(font, Vector2(ammo_x + 2.0, wr.position.y + 66), res_str, HORIZONTAL_ALIGNMENT_CENTER, 40, 12, Color("#94a3b8"))
 
@@ -1072,6 +1117,8 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 		for a_i in range(att_types.size()):
 			var ak: String = att_types[a_i]
 			var tier: int = int(slot_data.get(ak, 0)) if not is_empty else 0
+			if ak == "mag" and not is_empty:
+				tier = maxi(tier, int(slot_data.get("bolt", 0)))
 			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (slot_sz + gap), att_y, slot_sz, slot_sz)
 			_draw_attachment_slot(ar, ak, tier, str(slot_data.get("optic", "")) if not is_empty else "")
 
@@ -1253,8 +1300,8 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 		if wid != "empty" and wid != "":
 			var w_info: Dictionary = GameData.get_weapon_by_id(wid)
 			title = "【%d 武器】%s" % [w_idx + 1, str(w_info.get("name", wid))]
-			desc = "%s枪械 · 当前载弹: %d/%d\n左键拖动可与另一槽位交换，拖出丢至地面。" % [
-				str(w_info.get("cat", "AR")), int(s_data.get("ammo", 0)), int(s_data.get("max_ammo", 20))
+			desc = "%s枪械 · 当前载弹: %d/%d (备弹: %d)\n左键拖动可与另一槽位交换，拖出丢至地面。" % [
+				str(w_info.get("cat", "AR")), int(s_data.get("ammo", 0)), int(s_data.get("max_ammo", 20)), PlayerState.get_reserve_ammo(str(w_info.get("ammo", "light")))
 			]
 			action = "【左键拖动】交换槽位/存箱  【右键】丢弃至地面"
 			tier_col = _get_ammo_color(str(w_info.get("ammo", "light")))
@@ -1291,10 +1338,10 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 		var it_id: String = str(it.get("id", ""))
 		match it_id:
 			"light": title = "轻型弹药"; desc = "适用于 R-301、R-99、转换者、G7、RE-45、P2020。"; tier_col = Color("#f97316")
-			"heavy": title = "重型弹药"; desc = "适用于 平行步枪、赫姆洛克、猎兽、CAR、暴走、30-30、辅助手枪。"; tier_col = Color("#14b8a6")
+			"heavy": title = "重型弹药"; desc = "适用于 平行步枪、赫姆洛克、猎兽、CAR、暴走、30-30。"; tier_col = Color("#14b8a6")
 			"energy": title = "能量弹药"; desc = "适用于 哈沃克、复仇女神、电能冲锋枪、专注机枪、L-STAR、三重式。"; tier_col = Color("#84cc16")
 			"shotgun": title = "霰弹枪弹药"; desc = "适用于 和平捍卫者、獒犬、EVA-8、莫桑比克。"; tier_col = Color("#ef4444")
-			"sniper": title = "狙击弹药"; desc = "适用于 哨兵、充能步枪、长弓精确步枪。"; tier_col = Color("#38bdf8")
+			"sniper": title = "狙击弹药"; desc = "适用于 克雷贝尔、哨兵、充能步枪、长弓、小帮手。"; tier_col = Color("#38bdf8")
 			"arrows": title = "博塞克复合弓箭矢"; desc = "适用于 博塞克复合弓 (Bocek)。"; tier_col = Color("#f59e0b")
 			"shield_battery": title = "大型护盾电池 (大电)"; desc = "5.0秒完全充满所有护盾槽位。"; action = "[左键]立即打大电  [右键]丢弃"; tier_col = Color("#38bdf8")
 			"shield_cell": title = "小型护盾电池 (小电)"; desc = "3.0秒充能 1 格护盾 (25 HP)。"; action = "[左键]立即打小电  [右键]丢弃"; tier_col = Color("#38bdf8")
@@ -1306,6 +1353,9 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 			"thermite": title = "铝热剂手雷"; desc = "横向燃烧火墙持续灼烧。"; tier_col = Color("#ef4444")
 			_: title = str(it.get("name", it_id)); desc = "战术战备物资。"; tier_col = _get_tier_color(int(it.get("tier", 2)))
 	elif kind == "attachment":
+		var w_idx_a: int = int(hovered_slot.get("wep_idx", 0))
+		var wid_a: String = str(PlayerState.loadout[w_idx_a].get("weapon_id", "r301"))
+		var is_sg_a: bool = (str(GameData.get_weapon_by_id(wid_a).get("cat", "")) == "SHOTGUN")
 		var ak: String = str(hovered_slot.get("att_type", ""))
 		var tier: int = int(hovered_slot.get("tier", 0))
 		var op_id: String = str(hovered_slot.get("optic_id", ""))
@@ -1316,12 +1366,12 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 			desc = "高精度光学瞄准镜，提供清晰开镜视野。"
 			action = "【左键拖动】转移至另一武器  【右键】卸下至背包"
 		elif tier > 0:
-			var att_names: Dictionary = {"barrel": "枪口补偿器", "mag": "加长弹匣", "stock": "战术枪托", "hopup": "专属枪械辅助芯片"}
+			var att_names: Dictionary = {"barrel": "枪口补偿器", "mag": "霰弹枪枪栓" if is_sg_a else "加长弹匣", "stock": "战术枪托", "hopup": "专属枪械辅助芯片"}
 			title = "Lv.%d %s" % [tier, att_names.get(ak, "配件")]
-			desc = "强化武器后坐力控制、弹匣容量或战术换弹速度。"
+			desc = "提升霰弹枪射速与上膛速度 (+12%/22%/35%)。" if (ak == "mag" and is_sg_a) else "强化武器后坐力控制、弹匣容量或战术换弹速度。"
 			action = "【左键拖动】转移至另一武器  【右键】卸下至背包"
 		else:
-			var att_names: Dictionary = {"barrel": "枪口槽位", "mag": "弹匣槽位", "optic": "瞄准镜槽位", "stock": "枪托槽位", "hopup": "辅助器槽位"}
+			var att_names: Dictionary = {"barrel": "枪口槽位", "mag": "枪栓槽位" if is_sg_a else "弹匣槽位", "optic": "瞄准镜槽位", "stock": "枪托槽位", "hopup": "辅助器槽位"}
 			title = "【空】%s" % att_names.get(ak, "配件槽位")
 			desc = "当前未安装配件。可将背包或战利品中的配件拖入安装。"
 			action = "【拖入配件】安装至武器"
@@ -1611,4 +1661,3 @@ func _get_ammo_name(atype: String) -> String:
 		"arrows": return "箭矢"
 		"mythic": return "神话专属弹药"
 		_: return atype
-
