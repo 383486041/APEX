@@ -25,6 +25,7 @@ config/icon="res://icon.svg"
 GameData="*res://autoload/GameData.gd"
 PlayerState="*res://autoload/PlayerState.gd"
 AudioSynthesizer="*res://autoload/AudioSynthesizer.gd"
+BehaviorRecorder="*res://autoload/BehaviorRecorder.gd"
 
 [display]
 

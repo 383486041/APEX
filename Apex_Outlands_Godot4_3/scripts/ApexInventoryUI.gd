@@ -2,23 +2,12 @@ class_name ApexInventoryUI
 extends Control
 ## ============================================================================
 ## APEX LEGENDS AUTHENTIC GRAPHICAL INVENTORY & DEATHBOX LOOTING SYSTEM
-## 100% Visual / Icon Driven — Strictly NO plain text buttons!
-## Features:
-## - 3 Top Navigation Tabs: [物品栏] (Active, Red Indicator), [小队], [传奇]
-## - Top Section: Dual Graphical Weapon Panels (Weapon Silhouettes, Ammo Badges,
-##   Mag Ammo Count, and 5 Tier-Colored Attachment Slots: Barrel, Mag, Optic, Stock, Hop-up)
-## - Middle Section: 2x8 Rounded-Glass Backpack Grid with Vector-Drawn Item Icons
-##   (Light/Heavy/Energy/Shotgun/Sniper Ammo, Shield Batteries, Shield Cells,
-##   Medkits, Syringes, Phoenix Kits, Frag/Arc Star/Thermite Ordnance, Attachments)
-## - Full Mouse Drag-and-Drop: drag items to reorder, drag to equip, or drag out to drop!
-## - Authentic Deathbox Looting (击杀成盒搜刮):
-##   - Split-screen Apex Deathbox UI with Victim Banner
-##   - Prominent [一键秒换甲] Shield Core card with tier colors & 100% shield restore
-##   - Deathbox loot grid (weapons, ammo, consumables) with click/drag looting
-## - Red Slashed Circle (🚫) for Ammo & Attachments incompatible with equipped weapons
-## - Bottom Section: 5 Equipment Gear Slots (Helmet, Evo Shield, Knockdown, Backpack, Survival)
-## - Bottom-Left Squad & Player Status HUD (Legend Portrait, Segmented Shield Bar, HP Bar)
-## - Interactive Hover Tooltip Cards + Left-Click to Consume / Right-Click to Drop
+## Fixes & Upgrades:
+## - Fixes Deathbox item pickup (`PlayerState.add_loot_item(it)`) so picking up Ammo, Shield Batteries,
+##   Shield Cells, Medkits, Syringes, Phoenix Kits, Ordnance, or Attachments from a Deathbox properly
+##   increments `PlayerState.ammo_reserve`, `PlayerState.consumables`, `PlayerState.ordnance`, and `inventory_items`!
+## - Adds a 10-slot (2x5) Deathbox grid + One-Click [⚡ 一键拾取全部物资 (LOOT ALL)] button in the Deathbox header!
+## - Supports Arrows (`arrows`) ammo badge and all 28 weapons across 7 categories.
 ## ============================================================================
 
 signal closed
@@ -39,7 +28,7 @@ var deathbox_data: Dictionary = {}
 # Mouse Drag-and-Drop State
 var is_dragging: bool = false
 var drag_item: Dictionary = {}
-var drag_from_type: String = "" # "inventory", "deathbox", "attachment"
+var drag_from_type: String = "" # "inventory", "deathbox", "attachment", "weapon"
 var drag_from_idx: int = -1
 var drag_pos: Vector2 = Vector2.ZERO
 var drag_start_pos: Vector2 = Vector2.ZERO
@@ -144,16 +133,16 @@ func _input(event: InputEvent) -> void:
 							_handle_mouse_click(mb.position, mb.button_index)
 					elif hkind == "deathbox_armor_swap":
 						_execute_armor_swap()
+					elif hkind == "deathbox_loot_all":
+						_execute_deathbox_loot_all()
 					elif hkind == "tab":
 						_handle_mouse_click(mb.position, mb.button_index)
 			else:
-				# Mouse released
 				if is_dragging:
 					var dist: float = mb.position.distance_to(drag_start_pos)
 					if dist > 8.0:
 						_handle_drop(mb.position)
 					else:
-						# Considered a simple click if barely moved
 						_handle_mouse_click(mb.position, MOUSE_BUTTON_LEFT)
 					is_dragging = false
 					drag_item = {}
@@ -185,7 +174,11 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 
 	# If in Deathbox mode, check left-side Deathbox panels
 	if is_deathbox_mode and not deathbox_data.is_empty():
-		# Check Deathbox Armor Swap Card
+		var loot_all_rect := Rect2(262, 92, 120, 28)
+		if loot_all_rect.has_point(mpos):
+			hovered_slot = {"kind": "deathbox_loot_all"}
+			return
+
 		var d_armor_rect := Rect2(42, 135, 346, 75)
 		if d_armor_rect.has_point(mpos):
 			hovered_slot = {
@@ -195,14 +188,14 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 			}
 			return
 
-		# Check Deathbox Items Grid (2 cols x 4 rows)
+		# Check Deathbox Items Grid (2 cols x 5 rows = up to 10 items)
 		var d_items: Array = deathbox_data.get("items", [])
 		var d_start_x: float = 42.0
 		var d_start_y: float = 238.0
 		var d_slot_w: float = 168.0
-		var d_slot_h: float = 56.0
-		var d_gap: float = 10.0
-		for di in range(d_items.size()):
+		var d_slot_h: float = 54.0
+		var d_gap: float = 9.0
+		for di in range(mini(10, d_items.size())):
 			var c_i: int = di % 2
 			var r_i: int = di / 2
 			var dr := Rect2(d_start_x + float(c_i) * (d_slot_w + d_gap), d_start_y + float(r_i) * (d_slot_h + d_gap), d_slot_w, d_slot_h)
@@ -214,11 +207,9 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 				}
 				return
 
-		var db_panel_r := Rect2(32, 78, 365, 545)
+		var db_panel_r := Rect2(32, 78, 365, 555)
 		if db_panel_r.has_point(mpos):
-			hovered_slot = {
-				"kind": "deathbox_panel"
-			}
+			hovered_slot = {"kind": "deathbox_panel"}
 			return
 
 	# Check Player Weapon Cards & Attachments
@@ -316,6 +307,46 @@ func _execute_armor_swap() -> void:
 	PlayerState.state_updated.emit()
 	queue_redraw()
 
+func _execute_deathbox_loot_all() -> void:
+	## Looting all non-weapon items (and equipping weapons if an empty slot exists) with 1 click!
+	if deathbox_data.is_empty():
+		return
+	if not bool(deathbox_data.get("armor_swapped", false)):
+		_execute_armor_swap()
+	var d_items: Array = deathbox_data.get("items", [])
+	var remaining: Array = []
+	for it in d_items:
+		var it_type: String = str(it.get("type", ""))
+		if it_type == "weapon":
+			var empty_slot: int = -1
+			if str(PlayerState.loadout[0].get("weapon_id", "empty")) == "empty":
+				empty_slot = 0
+			elif str(PlayerState.loadout[1].get("weapon_id", "empty")) == "empty":
+				empty_slot = 1
+			if empty_slot != -1:
+				var new_wid: String = str(it.get("id", "r301"))
+				var new_wep: Dictionary = GameData.get_weapon_by_id(new_wid)
+				PlayerState.loadout[empty_slot] = it.get("weapon_data", {
+					"weapon_id": new_wid,
+					"ammo": int(new_wep.get("mag", 20)),
+					"max_ammo": int(new_wep.get("mag", 20)),
+					"optic": "2x_bruiser",
+					"charged": 0.0
+				}).duplicate(true)
+				weapon_swapped.emit(empty_slot, empty_slot)
+			else:
+				remaining.append(it)
+		elif it_type == "attachment":
+			var cur_w_idx: int = clampi(PlayerState.active_slot, 0, 1)
+			_equip_attachment_to_weapon(cur_w_idx, it)
+		else:
+			PlayerState.add_loot_item(it)
+	deathbox_data["items"] = remaining
+	AudioSynthesizer.play_reload_step("mag_in")
+	PlayerState.toast_pushed.emit("📦 已一键搜刮死亡之箱内全部弹药、电池、医疗品与配件！", "evo")
+	PlayerState.state_updated.emit()
+	queue_redraw()
+
 func _drop_weapon(w_idx: int, spawn_in_world: bool = true) -> void:
 	if w_idx < 0 or w_idx >= PlayerState.loadout.size():
 		return
@@ -344,7 +375,7 @@ func _drop_weapon(w_idx: int, spawn_in_world: bool = true) -> void:
 	if other_wid != "empty":
 		PlayerState.active_slot = other_idx
 	else:
-		PlayerState.active_slot = 2 # Melee / Heirloom
+		PlayerState.active_slot = 2
 
 	AudioSynthesizer.play_reload_step("mag_out")
 	if spawn_in_world:
@@ -413,9 +444,9 @@ func _equip_attachment_to_weapon(w_idx: int, att_item: Dictionary) -> void:
 	if wid == "empty":
 		return
 	var it_id: String = str(att_item.get("id", ""))
-	if it_id.begins_with("1x") or it_id.begins_with("2x") or it_id.begins_with("3x") or it_id.begins_with("4x") or it_id.begins_with("6x"):
+	if it_id.begins_with("1x") or it_id.begins_with("2x") or it_id.begins_with("3x") or it_id.begins_with("4x") or it_id.begins_with("6x") or it_id.begins_with("optic"):
 		var old_op: String = str(slot_data.get("optic", ""))
-		slot_data["optic"] = it_id
+		slot_data["optic"] = "3x_ranger" if it_id == "optic_3x" else it_id
 		if old_op != "":
 			PlayerState.inventory_items.append({
 				"type": "attachment",
@@ -433,12 +464,15 @@ func _equip_attachment_to_weapon(w_idx: int, att_item: Dictionary) -> void:
 		var tier: int = int(att_item.get("tier", 3))
 		var old_t: int = int(slot_data.get("mag", 0))
 		slot_data["mag"] = tier
+		slot_data["mag_tier"] = tier
+		slot_data["max_ammo"] = GameData.get_weapon_mag_capacity(wid, tier)
 		if old_t > 0:
 			PlayerState.inventory_items.append({"type": "attachment", "id": "mag_%d" % old_t, "tier": old_t, "name": "Lv.%d 加长弹匣" % old_t})
 	elif it_id.begins_with("stock"):
 		var tier: int = int(att_item.get("tier", 3))
 		var old_t: int = int(slot_data.get("stock", 0))
 		slot_data["stock"] = tier
+		slot_data["stock_tier"] = tier
 		if old_t > 0:
 			PlayerState.inventory_items.append({"type": "attachment", "id": "stock_%d" % old_t, "tier": old_t, "name": "Lv.%d 标准枪托" % old_t})
 
@@ -461,7 +495,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				AudioSynthesizer.play_reload_step("bolt_slap")
 				var w1: Dictionary = GameData.get_weapon_by_id(str(PlayerState.loadout[drag_from_idx].get("weapon_id", "")))
 				var w2: Dictionary = GameData.get_weapon_by_id(str(PlayerState.loadout[target_w_idx].get("weapon_id", "")))
-				PlayerState.toast_pushed.emit("🔄 已交换武器槽位：【%s】↔【%s】" % [str(w1.get("name","")), str(w2.get("name",""))], "evo")
+				PlayerState.toast_pushed.emit("🔄 已交换武器槽位：【%s】↔【%s】" % [str(w1.get("name", "")), str(w2.get("name", ""))], "evo")
 				weapon_swapped.emit(drag_from_idx, target_w_idx)
 				PlayerState.state_updated.emit()
 				return
@@ -477,6 +511,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				db_item["name"] = str(wep_info.get("name", wid))
 				db_item["weapon_data"] = drag_item.duplicate(true)
 				AudioSynthesizer.play_reload_step("bolt_slap")
+				weapon_swapped.emit(drag_from_idx, drag_from_idx)
 				PlayerState.toast_pushed.emit("🔄 已与战利品箱交换武器：【%s】" % str(wep_info.get("name", wid)), "evo")
 			else:
 				d_items.append({
@@ -493,7 +528,6 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			PlayerState.state_updated.emit()
 			return
 		else:
-			# Dropped outside UI onto world: DROP WEAPON TO GROUND!
 			_drop_weapon(drag_from_idx, true)
 			return
 
@@ -521,11 +555,10 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			_detach_attachment_to_inventory(drag_from_idx, str(drag_item.get("att_type", "")), false)
 			return
 		else:
-			# Dropped outside onto world
 			_detach_attachment_to_inventory(drag_from_idx, str(drag_item.get("att_type", "")), true)
 			return
 
-	# 3. Dragging from Deathbox
+	# 3. Dragging from Deathbox (Properly syncs with PlayerState.add_loot_item!)
 	elif drag_from_type == "deathbox":
 		var d_items: Array = deathbox_data.get("items", [])
 		if drag_item.get("type") == "weapon" and target_kind == "weapon":
@@ -554,6 +587,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 				d_items.remove_at(drag_from_idx)
 			PlayerState.loadout[target_w_idx] = new_data.duplicate(true)
 			AudioSynthesizer.play_reload_step("bolt_slap")
+			weapon_swapped.emit(target_w_idx, target_w_idx)
 			PlayerState.toast_pushed.emit("🔫 已从战利品箱装备【%s】！" % str(new_wep.get("name", new_wid)), "evo")
 			PlayerState.state_updated.emit()
 			return
@@ -568,10 +602,10 @@ func _handle_drop(drop_pos: Vector2) -> void:
 		else:
 			if drag_from_idx >= 0 and drag_from_idx < d_items.size():
 				var it: Dictionary = d_items[drag_from_idx]
-				PlayerState.inventory_items.append(it)
+				PlayerState.add_loot_item(it)
 				d_items.remove_at(drag_from_idx)
 				AudioSynthesizer.play_reload_step("mag_in")
-				PlayerState.toast_pushed.emit("拾取战利品：【%s】" % _get_item_display_name(str(it.get("id", "物资"))), "evo")
+				PlayerState.toast_pushed.emit("📦 已拾取战利品：【%s】 x%d" % [_get_item_display_name(str(it.get("id", "物资"))), int(it.get("count", 1))], "evo")
 				PlayerState.state_updated.emit()
 				return
 
@@ -603,14 +637,13 @@ func _handle_drop(drop_pos: Vector2) -> void:
 		elif target_kind == "weapon":
 			var w_idx: int = int(hovered_slot.get("wep_idx", 0))
 			var it_id: String = str(drag_item.get("id", ""))
-			if it_id.begins_with("3x") or it_id.begins_with("2x") or it_id.begins_with("1x"):
-				PlayerState.loadout[w_idx]["optic"] = it_id
+			if it_id.begins_with("3x") or it_id.begins_with("2x") or it_id.begins_with("1x") or it_id.begins_with("optic"):
+				PlayerState.loadout[w_idx]["optic"] = "3x_ranger" if it_id == "optic_3x" else it_id
 				AudioSynthesizer.play_reload_step("lever_cock")
 				PlayerState.toast_pushed.emit("已装备瞄具至槽位 [%d]" % (w_idx + 1), "evo")
 				PlayerState.state_updated.emit()
 				return
 		elif target_kind == "":
-			# Dropped outside UI onto game world: DROP ITEM!
 			var it_id: String = str(drag_item.get("id", ""))
 			var it_count: int = int(drag_item.get("count", 1))
 			AudioSynthesizer.play_reload_step("mag_out")
@@ -623,7 +656,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			PlayerState.toast_pushed.emit("📦 已丢弃物品：【%s】" % _get_item_display_name(it_id), "info")
 			PlayerState.state_updated.emit()
 
-func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
+func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 	if hovered_slot.is_empty():
 		return
 
@@ -641,6 +674,10 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 		_execute_armor_swap()
 		return
 
+	if kind == "deathbox_loot_all":
+		_execute_deathbox_loot_all()
+		return
+
 	if kind == "weapon":
 		var w_idx: int = int(hovered_slot["wep_idx"])
 		if button_idx == MOUSE_BUTTON_RIGHT:
@@ -650,6 +687,7 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 			AudioSynthesizer.play_reload_step("lever_cock")
 			var wid: String = str(PlayerState.loadout[w_idx].get("weapon_id", "empty"))
 			if wid != "empty":
+				weapon_swapped.emit(w_idx, w_idx)
 				PlayerState.toast_pushed.emit("🔫 已切换主手武器：[%d 槽位] 【%s】" % [w_idx + 1, str(GameData.get_weapon_by_id(wid).get("name", wid))], "info")
 			PlayerState.state_updated.emit()
 			queue_redraw()
@@ -661,7 +699,6 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 		if button_idx == MOUSE_BUTTON_RIGHT:
 			_detach_attachment_to_inventory(w_idx, ak, false)
 		elif button_idx == MOUSE_BUTTON_LEFT and ak == "optic":
-			# Cycle optical zoom or next optic
 			PlayerState.scope_alt_zoom = not PlayerState.scope_alt_zoom
 			AudioSynthesizer.play_reload_step("lever_cock")
 			queue_redraw()
@@ -672,8 +709,8 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 		var d_items: Array = deathbox_data.get("items", [])
 		if idx >= 0 and idx < d_items.size():
 			var it: Dictionary = d_items[idx]
-			if str(it.get("type", "")) == "weapon":
-				# Click on deathbox weapon equips into current or empty slot!
+			var it_type: String = str(it.get("type", ""))
+			if it_type == "weapon":
 				var target_slot: int = PlayerState.active_slot
 				if target_slot == 2 or str(PlayerState.loadout[clampi(target_slot, 0, 1)].get("weapon_id", "empty")) == "empty":
 					if str(PlayerState.loadout[0].get("weapon_id", "empty")) == "empty":
@@ -707,12 +744,20 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 				PlayerState.loadout[target_slot] = new_data.duplicate(true)
 				PlayerState.active_slot = target_slot
 				AudioSynthesizer.play_reload_step("bolt_slap")
+				weapon_swapped.emit(target_slot, target_slot)
 				PlayerState.toast_pushed.emit("🔫 已从战利品箱装备【%s】！" % str(new_wep.get("name", new_wid)), "evo")
+			elif it_type == "attachment":
+				var cur_w_idx: int = clampi(PlayerState.active_slot, 0, 1)
+				_equip_attachment_to_weapon(cur_w_idx, it)
+				d_items.remove_at(idx)
+				AudioSynthesizer.play_reload_step("lever_cock")
+				PlayerState.toast_pushed.emit("🔧 已拾取并安装配件：【%s】" % str(it.get("name", "配件")), "evo")
 			else:
-				PlayerState.inventory_items.append(it)
+				# Use unified PlayerState.add_loot_item so ammo & consumables update properly!
+				PlayerState.add_loot_item(it)
 				d_items.remove_at(idx)
 				AudioSynthesizer.play_reload_step("mag_in")
-				PlayerState.toast_pushed.emit("拾取战利品：【%s】" % _get_item_display_name(str(it.get("id", "物资"))), "evo")
+				PlayerState.toast_pushed.emit("📦 已拾取战利品：【%s】 x%d" % [_get_item_display_name(str(it.get("id", "物资"))), int(it.get("count", 1))], "evo")
 			PlayerState.state_updated.emit()
 			hovered_slot = {}
 			queue_redraw()
@@ -729,10 +774,10 @@ func _handle_mouse_click(mpos: Vector2, button_idx: int) -> void:
 				PlayerState.selected_heal_id = it_id
 				close()
 				consumable_used.emit(it_id)
-				AudioSynthesizer.play_evo_level_up()
-			elif it_type == "attachment" and it_id.begins_with("3x"):
-				var active_wep: Dictionary = PlayerState.loadout[PlayerState.active_slot]
-				active_wep["optic"] = "3x_ranger"
+			elif it_type == "attachment":
+				var active_w_idx: int = clampi(PlayerState.active_slot, 0, 1)
+				_equip_attachment_to_weapon(active_w_idx, it)
+				PlayerState.inventory_items.remove_at(idx)
 				AudioSynthesizer.play_reload_step("lever_cock")
 				queue_redraw()
 			elif it_type == "ammo":
@@ -756,40 +801,27 @@ func _draw() -> void:
 
 	var vp := get_viewport_rect().size
 
-	# 1. Full-Screen Translucent Apex Vignette & Blur Glass Overlay
 	draw_rect(Rect2(Vector2.ZERO, vp), Color(0.02, 0.04, 0.07, 0.88), true)
 	draw_rect(Rect2(0, 0, vp.x, 60), Color(0.01, 0.02, 0.04, 0.95), true)
 	draw_rect(Rect2(0, vp.y - 70, vp.x, 70), Color(0.01, 0.02, 0.04, 0.95), true)
 
-	# 2. Top Navigation Tabs: [物品栏] [小队] [传奇]
 	_draw_top_tabs(vp)
 
-	# 3. Deathbox Looting Panel (if deathbox is open)
 	if is_deathbox_mode and not deathbox_data.is_empty():
 		_draw_deathbox_panel(vp)
 
-	# 4. Weapons & Backpack & Gear Cards
 	_draw_weapon_cards(vp)
 	_draw_backpack_grid(vp)
 	_draw_equipment_bar(vp)
-
-	# 5. Bottom-Left Squad & Player Status HUD
 	_draw_squad_player_hud(vp)
-
-	# 6. Bottom-Right Hints
 	_draw_footer_hints(vp)
 
-	# 7. Drag-and-Drop Ghost Card
 	if is_dragging and not drag_item.is_empty():
 		_draw_drag_ghost(drag_pos)
 
-	# 8. Floating Hover Tooltip Card
 	if not is_dragging:
 		_draw_hover_tooltip(vp)
 
-## ============================================================================
-## 1. Top Navigation Tabs
-## ============================================================================
 func _draw_top_tabs(vp: Vector2) -> void:
 	var tab_w: float = 120.0
 	var tab_y: float = 24.0
@@ -797,7 +829,6 @@ func _draw_top_tabs(vp: Vector2) -> void:
 	var tab_start_x: float = vp.x * 0.5 - (tab_w * 3.0 * 0.5)
 
 	draw_rect(Rect2(tab_start_x - 12, tab_y - 4, tab_w * 3.0 + 24, 40), Color(0.06, 0.09, 0.14, 0.75), true)
-
 	for i in range(tabs.size()):
 		var tname: String = tabs[i]
 		var is_active: bool = (tname == "物品栏" and active_tab == "inventory") or (tname == "小队" and active_tab == "squad") or (tname == "传奇" and active_tab == "legends")
@@ -818,9 +849,6 @@ func _draw_top_tabs(vp: Vector2) -> void:
 		var str_w := font.get_string_size(tname, HORIZONTAL_ALIGNMENT_CENTER, -1, 15).x
 		draw_string(font, Vector2(tx + (tab_w - str_w) * 0.5, tab_y + 20), tname, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
 
-## ============================================================================
-## 2. Authentic Apex Deathbox Panel (击杀成盒搜刮 & 一键秒换甲)
-## ============================================================================
 func _draw_deathbox_panel(_vp: Vector2) -> void:
 	var v_name: String = str(deathbox_data.get("victim_name", "外域战士"))
 	var box_tier: int = int(deathbox_data.get("evo_tier", 3))
@@ -828,28 +856,30 @@ func _draw_deathbox_panel(_vp: Vector2) -> void:
 	var tier_col: Color = tier_info["color"]
 	var is_swapped: bool = bool(deathbox_data.get("armor_swapped", false))
 
-	var db_rect := Rect2(32, 78, 365, 545)
+	var db_rect := Rect2(32, 78, 365, 555)
 	_draw_chamfered_card(db_rect, Color(0.04, 0.07, 0.12, 0.96), tier_col if not is_swapped else Color("#475569"), 2.2)
 
-	# Deathbox Header Card
 	var hdr_rect := Rect2(42, 88, 345, 36)
 	draw_rect(hdr_rect, Color(tier_col.r, tier_col.g, tier_col.b, 0.28), true)
 	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(52, 112), "💀 %s 的死亡之箱" % v_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
+	draw_string(font, Vector2(52, 112), "💀 %s 的死亡之箱" % v_name, HORIZONTAL_ALIGNMENT_LEFT, 200, 15, Color.WHITE)
 
-	# --- PURE GRAPHICAL ONE-CLICK ARMOR SWAP (一键秒换甲) ---
+	# One-Click Loot All Button in Header
+	var la_rect := Rect2(262, 92, 120, 28)
+	var is_la_hover: bool = (hovered_slot.get("kind", "") == "deathbox_loot_all")
+	_draw_rounded_slot_box(la_rect, Color(0.12, 0.35, 0.22, 0.95) if is_la_hover else Color(0.08, 0.22, 0.15, 0.90), Color("#22c55e"), 1.8)
+	draw_string(font, Vector2(la_rect.position.x + 10, la_rect.position.y + 19), "⚡ 一键全拾取", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#fde047") if is_la_hover else Color("#86efac"))
+
+	# One-Click Armor Swap Card
 	var ar_rect := Rect2(42, 135, 345, 75)
 	var is_ar_hover: bool = (hovered_slot.get("kind", "") == "deathbox_armor_swap")
 	_draw_rounded_slot_box(ar_rect, Color(0.08, 0.12, 0.19, 0.95), Color("#fbbf24") if is_ar_hover else (tier_col if not is_swapped else Color("#334155")), 2.5 if is_ar_hover else 1.8)
 
-	# Large Hexagonal Shield Badge on Left of Armor Swap Card
 	var s_center := Vector2(ar_rect.position.x + 36, ar_rect.position.y + 37)
 	_draw_gear_icon(s_center, "armor", box_tier, tier_col if not is_swapped else Color("#64748b"))
 
-	# Armor Name & Max Shield
 	draw_string(font, Vector2(ar_rect.position.x + 72, ar_rect.position.y + 26), "Lv.%d %s护甲核心" % [box_tier, str(tier_info["name"])], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, tier_col if not is_swapped else Color("#94a3b8"))
 
-	# Full 100% Shield Segments Bar
 	var seg_start_x: float = ar_rect.position.x + 72
 	var seg_y: float = ar_rect.position.y + 36
 	var num_segs: int = int(tier_info["segments"])
@@ -858,22 +888,20 @@ func _draw_deathbox_panel(_vp: Vector2) -> void:
 		draw_rect(sb_r, tier_col if not is_swapped else Color("#475569"), true)
 		draw_rect(sb_r, Color.WHITE, false, 1.0)
 
-	# One-Click Armor Swap Action Tag
 	var action_txt: String = "⚡ 点击一键秒换甲" if not is_swapped else "✓ 已秒换"
 	var action_col: Color = Color("#fde047") if not is_swapped else Color("#64748b")
 	draw_string(font, Vector2(ar_rect.position.x + 72, ar_rect.position.y + 64), action_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, action_col)
 
-	# Deathbox Loot Items Grid
-	draw_string(font, Vector2(44, 228), "战利品（点击直接拾取 / 拖入背包）：", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#94a3b8"))
+	draw_string(font, Vector2(44, 228), "战利品（点击直接拾取并同步备弹/电池 / 拖入背包）：", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#94a3b8"))
 
 	var d_items: Array = deathbox_data.get("items", [])
 	var d_start_x: float = 42.0
 	var d_start_y: float = 238.0
 	var d_slot_w: float = 168.0
-	var d_slot_h: float = 56.0
+	var d_slot_h: float = 54.0
 	var d_gap: float = 9.0
 
-	for di in range(min(8, d_items.size())):
+	for di in range(mini(10, d_items.size())):
 		var c_i: int = di % 2
 		var r_i: int = di / 2
 		var dr := Rect2(d_start_x + float(c_i) * (d_slot_w + d_gap), d_start_y + float(r_i) * (d_slot_h + d_gap), d_slot_w, d_slot_h)
@@ -885,19 +913,14 @@ func _draw_deathbox_panel(_vp: Vector2) -> void:
 		var it_i: String = str(it.get("id", ""))
 		var it_cnt: int = int(it.get("count", 1))
 
-		# Icon on Left
-		var icon_r := Rect2(dr.position.x + 4, dr.position.y + 4, 48, 48)
+		var icon_r := Rect2(dr.position.x + 4, dr.position.y + 3, 48, 48)
 		_draw_inventory_item_icon(icon_r, it_t, it_i, it)
 
-		# Name & Quantity on Right
-		var iname: String = _get_item_display_name(it_i)
-		draw_string(font, Vector2(dr.position.x + 56, dr.position.y + 26), iname, HORIZONTAL_ALIGNMENT_LEFT, 105, 12, Color.WHITE)
+		var iname: String = str(it.get("name", "")) if str(it.get("name", "")) != "" else _get_item_display_name(it_i)
+		draw_string(font, Vector2(dr.position.x + 56, dr.position.y + 24), iname, HORIZONTAL_ALIGNMENT_LEFT, 105, 12, Color.WHITE)
 		if it_cnt > 1:
-			draw_string(font, Vector2(dr.position.x + 56, dr.position.y + 44), "x%d" % it_cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fde047"))
+			draw_string(font, Vector2(dr.position.x + 56, dr.position.y + 42), "x%d" % it_cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fde047"))
 
-## ============================================================================
-## 3. Dual Weapon Cards
-## ============================================================================
 func _draw_weapon_cards(vp: Vector2) -> void:
 	var wep_y: float = 78.0
 	var wep_w: float = minf(410.0, vp.x * 0.36) if is_deathbox_mode else minf(460.0, vp.x * 0.43)
@@ -919,7 +942,6 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 		var ammo_type: String = str(wep.get("ammo", "light")) if not is_empty else "light"
 		var ammo_col := _get_ammo_color(ammo_type) if not is_empty else Color("#64748b")
 
-		# Check drag-over status
 		var is_drag_target: bool = false
 		var drag_target_hint: String = ""
 		if is_dragging:
@@ -946,11 +968,10 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 
 		var bg_col: Color = Color(0.06, 0.09, 0.15, 0.92) if not is_empty else Color(0.04, 0.06, 0.10, 0.75)
 		if is_dragging and drag_from_type == "weapon" and drag_from_idx == w_idx:
-			bg_col = Color(0.03, 0.04, 0.07, 0.6) # dimmed while dragged
+			bg_col = Color(0.03, 0.04, 0.07, 0.6)
 
 		_draw_chamfered_card(wr, bg_col, border_col, border_w)
 
-		# Top tag: [1 武器] / [2 武器]
 		var tag_rect := Rect2(wr.position.x + 12, wr.position.y + 10, 68, 20)
 		draw_rect(tag_rect, ammo_col if is_equipped and not is_empty else Color("#1e293b"), true)
 		draw_string(font, Vector2(tag_rect.position.x + 8, tag_rect.position.y + 14), "[%d 武器]" % (w_idx + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE if is_equipped else Color("#cbd5e1"))
@@ -969,14 +990,12 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 			var badge_center := Vector2(ammo_x + 22.0, wr.position.y + 90.0)
 			_draw_ammo_badge(badge_center, ammo_type, 17.0)
 		else:
-			# Empty slot visuals
 			draw_string(font, Vector2(wr.position.x + 88, wr.position.y + 24), "[空武器槽位]", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#64748b"))
 			var hint_empty: String = "拖入战利品箱武器 或 地面捡取"
 			draw_string(font, Vector2(wr.position.x + 24, wr.position.y + 75), hint_empty, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#475569"))
 			var ammo_x: float = wr.position.x + wr.size.x - 72.0
 			draw_string(font, Vector2(ammo_x + 10, wr.position.y + 54), "--", HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color("#475569"))
 
-		# Drag-over target indicator banner
 		if is_drag_target and drag_target_hint != "":
 			var h_r := Rect2(wr.position.x + 10, wr.position.y + 40, wr.size.x - 20, 32)
 			draw_rect(h_r, Color(0.98, 0.75, 0.14, 0.35), true)
@@ -984,7 +1003,6 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 			var tw: float = font.get_string_size(drag_target_hint, HORIZONTAL_ALIGNMENT_CENTER, -1, 14).x
 			draw_string(font, Vector2(h_r.position.x + (h_r.size.x - tw) * 0.5, h_r.position.y + 22), drag_target_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
 
-		# 5 Attachment Slots
 		var att_types := ["barrel", "mag", "optic", "stock", "hopup"]
 		var slot_sz: float = 38.0
 		var gap: float = 8.0
@@ -995,9 +1013,6 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (slot_sz + gap), att_y, slot_sz, slot_sz)
 			_draw_attachment_slot(ar, ak, tier, str(slot_data.get("optic", "")) if not is_empty else "")
 
-## ============================================================================
-## 4. Middle Section: Backpack Grid
-## ============================================================================
 func _draw_backpack_grid(vp: Vector2) -> void:
 	var slot_sz: float = 56.0
 	var gap: float = 10.0
@@ -1037,15 +1052,10 @@ func _draw_backpack_grid(vp: Vector2) -> void:
 
 			if it_type == "ammo" and not active_ammos.has(it_id):
 				_draw_incompatible_slash(Vector2(sr.position.x + 12, sr.position.y + 12), 7.5)
-			elif it_type == "attachment" and it_id.begins_with("mag_heavy") and not active_ammos.has("heavy"):
-				_draw_incompatible_slash(Vector2(sr.position.x + 12, sr.position.y + 12), 7.5)
 		else:
 			var lock_col := Color(0.2, 0.28, 0.38, 0.35)
 			draw_circle(sr.get_center(), 6.0, lock_col)
 
-## ============================================================================
-## 5. Bottom Section: Equipment Gear Slots
-## ============================================================================
 func _draw_equipment_bar(vp: Vector2) -> void:
 	var eq_slots := ["helmet", "armor", "knockdown", "backpack", "survival"]
 	var eq_sz: float = 58.0
@@ -1069,9 +1079,6 @@ func _draw_equipment_bar(vp: Vector2) -> void:
 		_draw_rounded_slot_box(er, Color(0.06, 0.10, 0.16, 0.92), tier_col, 2.5 if is_hover else 1.8)
 		_draw_gear_icon(er.get_center(), ek, tier, tier_col)
 
-## ============================================================================
-## 6. Drag Ghost Follower
-## ============================================================================
 func _draw_drag_ghost(pos: Vector2) -> void:
 	var font := ThemeDB.fallback_font
 	if drag_from_type == "weapon":
@@ -1083,25 +1090,15 @@ func _draw_drag_ghost(pos: Vector2) -> void:
 		var gh: float = 78.0
 		var g_rect := Rect2(pos.x - gw * 0.5, pos.y - gh * 0.5, gw, gh)
 		_draw_chamfered_card(g_rect, Color(0.08, 0.12, 0.20, 0.96), ammo_col, 2.5)
-
-		# Tag & Name
 		draw_rect(Rect2(g_rect.position.x + 8, g_rect.position.y + 8, 48, 18), ammo_col, true)
 		draw_string(font, Vector2(g_rect.position.x + 12, g_rect.position.y + 22), "武器", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
 		draw_string(font, Vector2(g_rect.position.x + 62, g_rect.position.y + 22), str(wep.get("name", wid)), HORIZONTAL_ALIGNMENT_LEFT, 150, 14, Color.WHITE)
-
-		# Mini silhouette / Ammo
 		var sil_r := Rect2(g_rect.position.x + 12, g_rect.position.y + 32, 110, 38)
 		_draw_weapon_silhouette(sil_r, wid, str(wep.get("cat", "AR")), ammo_col)
-
-		# Ammo badge and count
 		var badge_c := Vector2(g_rect.position.x + gw - 32, g_rect.position.y + 44)
 		_draw_ammo_badge(badge_c, ammo_type, 14.0)
 		var ammo_str: String = "%d" % int(drag_item.get("ammo", 0))
 		draw_string(font, Vector2(g_rect.position.x + gw - 64, g_rect.position.y + 50), ammo_str, HORIZONTAL_ALIGNMENT_RIGHT, -1, 16, Color.WHITE)
-
-		# Hint below
-		draw_string(font, Vector2(pos.x - 120, pos.y + gh * 0.5 + 16), "【拖至另一武器槽交换 / 拖出丢弃】", HORIZONTAL_ALIGNMENT_CENTER, 240, 11, Color("#fde047"))
-
 	elif drag_from_type == "attachment":
 		var ak: String = str(drag_item.get("att_type", "barrel"))
 		var tier: int = int(drag_item.get("tier", 1))
@@ -1110,10 +1107,7 @@ func _draw_drag_ghost(pos: Vector2) -> void:
 		var g_rect := Rect2(pos.x - sz * 0.5, pos.y - sz * 0.5, sz, sz)
 		_draw_rounded_slot_box(g_rect, Color(0.08, 0.12, 0.20, 0.95), tier_col, 2.5)
 		_draw_attachment_slot(g_rect, ak, tier, str(drag_item.get("optic_id", "")))
-		draw_string(font, Vector2(pos.x - 80, pos.y + sz * 0.5 + 16), "【拖至武器安装 / 移入背包】", HORIZONTAL_ALIGNMENT_CENTER, 160, 11, Color("#fde047"))
-
 	else:
-		# Backpack or Deathbox
 		if drag_item.get("type") == "weapon":
 			var wid: String = str(drag_item.get("id", ""))
 			var wep: Dictionary = GameData.get_weapon_by_id(wid)
@@ -1127,18 +1121,13 @@ func _draw_drag_ghost(pos: Vector2) -> void:
 			var sil_r := Rect2(g_rect.position.x + 12, g_rect.position.y + 28, 100, 36)
 			_draw_weapon_silhouette(sil_r, wid, str(wep.get("cat", "AR")), ammo_col)
 			_draw_ammo_badge(Vector2(g_rect.position.x + gw - 28, g_rect.position.y + 44), ammo_type, 13.0)
-			draw_string(font, Vector2(pos.x - 80, pos.y + gh * 0.5 + 16), "【拖至武器槽装备】", HORIZONTAL_ALIGNMENT_CENTER, 160, 11, Color("#fde047"))
 		else:
 			var g_rect := Rect2(pos.x - 30, pos.y - 30, 60, 60)
 			_draw_rounded_slot_box(g_rect, Color(0.12, 0.18, 0.28, 0.92), Color("#38bdf8"), 2.5)
 			var it_type: String = str(drag_item.get("type", ""))
 			var it_id: String = str(drag_item.get("id", ""))
 			_draw_inventory_item_icon(g_rect, it_type, it_id, drag_item)
-			draw_string(font, Vector2(pos.x - 60, pos.y + 45), "[拖动中...]", HORIZONTAL_ALIGNMENT_CENTER, 120, 11, Color("#fde047"))
 
-## ============================================================================
-## 7. Squad & Player HUD and Footer
-## ============================================================================
 func _draw_squad_player_hud(vp: Vector2) -> void:
 	var leg: Dictionary = GameData.get_legend_by_id(PlayerState.selected_legend_id)
 	var tier: Dictionary = GameData.get_evo_tier(PlayerState.evo_level)
@@ -1147,14 +1136,12 @@ func _draw_squad_player_hud(vp: Vector2) -> void:
 	var panel_rect := Rect2(42, vp.y - 120, 360, 95)
 	_draw_chamfered_card(panel_rect, Color(0.04, 0.07, 0.12, 0.92), Color("#334155"), 1.5)
 
-	# Legend Portrait Silhouette Box
 	var port_r := Rect2(panel_rect.position.x + 12, panel_rect.position.y + 12, 60, 70)
 	draw_rect(port_r, Color(tier_col.r, tier_col.g, tier_col.b, 0.25), true)
 	draw_rect(port_r, tier_col, false, 1.8)
 	var font := ThemeDB.fallback_font
 	draw_string(font, Vector2(port_r.position.x + 8, port_r.position.y + 42), "传奇", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 
-	# Name & Shield HP
 	draw_string(font, Vector2(panel_rect.position.x + 84, panel_rect.position.y + 28), str(leg["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE)
 
 	var seg_box_x: float = panel_rect.position.x + 84
@@ -1167,7 +1154,6 @@ func _draw_squad_player_hud(vp: Vector2) -> void:
 		draw_rect(Rect2(sb_r.position.x, sb_r.position.y, sb_r.size.x * fill_amt, sb_r.size.y), tier_col, true)
 		draw_rect(sb_r, Color.WHITE, false, 1.0)
 
-	# HP Bar
 	var hp_r := Rect2(seg_box_x, seg_box_y + 18, 160.0, 10.0)
 	draw_rect(hp_r, Color(0.15, 0.2, 0.25), true)
 	draw_rect(Rect2(hp_r.position.x, hp_r.position.y, hp_r.size.x * (PlayerState.hp / 100.0), hp_r.size.y), Color("#22c55e"), true)
@@ -1175,13 +1161,10 @@ func _draw_squad_player_hud(vp: Vector2) -> void:
 
 func _draw_footer_hints(vp: Vector2) -> void:
 	var font := ThemeDB.fallback_font
-	var hint_str: String = "⚡ 拖动物品/枪械以换位/装备/丢弃  |  [左键] 使用恢复品  |  [右键] 丢弃单个/枪械  |  [TAB / ESC] 关闭"
+	var hint_str: String = "⚡ 点击或拖动物品可拾取/换位/装备  |  [左键] 使用电池/打药  |  [右键] 丢弃至地面  |  [TAB / ESC] 关闭"
 	var hw := font.get_string_size(hint_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 13).x
 	draw_string(font, Vector2((vp.x - hw) * 0.5, vp.y - 25), hint_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#94a3b8"))
 
-## ============================================================================
-## 8. Hover Tooltip Card
-## ============================================================================
 func _draw_hover_tooltip(vp: Vector2) -> void:
 	if hovered_slot.is_empty():
 		return
@@ -1192,18 +1175,20 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 	var action: String = ""
 	var tier_col: Color = Color("#38bdf8")
 
-	if kind == "weapon":
+	if kind == "deathbox_loot_all":
+		title = "⚡ 一键搜刮全部战利品 (LOOT ALL)"
+		desc = "立即秒换护甲并拾取箱内所有弹药、大小电池、医疗箱、投掷物与配件！"
+		action = "【鼠标左键】 一键全部拾取"
+		tier_col = Color("#22c55e")
+	elif kind == "weapon":
 		var w_idx: int = int(hovered_slot.get("wep_idx", 0))
 		var s_data: Dictionary = PlayerState.loadout[w_idx]
 		var wid: String = str(s_data.get("weapon_id", "empty"))
 		if wid != "empty" and wid != "":
 			var w_info: Dictionary = GameData.get_weapon_by_id(wid)
 			title = "【%d 武器】%s" % [w_idx + 1, str(w_info.get("name", wid))]
-			var ammo_str: String = "轻型" if str(w_info.get("ammo")) == "light" else ("重型" if str(w_info.get("ammo")) == "heavy" else ("能量" if str(w_info.get("ammo")) == "energy" else ("霰弹" if str(w_info.get("ammo")) == "shotgun" else "狙击")))
-			desc = "%s枪械 · 弹药: %s · 当前载弹: %d\n左键拖动可与另一槽位交换，拖出丢至地面。" % [
-				str(w_info.get("cat", "突击步枪")),
-				ammo_str,
-				int(s_data.get("ammo", 0))
+			desc = "%s枪械 · 当前载弹: %d/%d\n左键拖动可与另一槽位交换，拖出丢至地面。" % [
+				str(w_info.get("cat", "AR")), int(s_data.get("ammo", 0)), int(s_data.get("max_ammo", 20))
 			]
 			action = "【左键拖动】交换槽位/存箱  【右键】丢弃至地面"
 			tier_col = _get_ammo_color(str(w_info.get("ammo", "light")))
@@ -1212,7 +1197,6 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 			desc = "当前未装备武器。可从战利品箱或地面拾取武器拖入装备。"
 			action = "【拖入武器】装备至此槽位"
 			tier_col = Color("#64748b")
-
 	elif kind == "deathbox_armor_swap":
 		var b_tier: int = int(hovered_slot.get("tier", 3))
 		var is_sw: bool = bool(hovered_slot.get("swapped", false))
@@ -1221,7 +1205,6 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 		title = "⚡ 死亡之箱 · Lv.%d 进化护盾核心" % b_tier
 		desc = "包含满额 %d 点护盾值！无需打大电，秒换恢复 100%% 战斗力！" % int(t_info["max_shield"])
 		action = "【鼠标左键】 一键秒换甲！" if not is_sw else "【已秒换拾取】"
-
 	elif kind == "deathbox_item":
 		var it: Dictionary = hovered_slot["item"]
 		var it_id: String = str(it.get("id", ""))
@@ -1234,29 +1217,28 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 			tier_col = _get_ammo_color(str(w_info.get("ammo", "light")))
 		else:
 			title = _get_item_display_name(it_id)
-			desc = "战利品箱物资。点击直接拾取至背包，或拖入槽位。"
+			desc = "战利品箱物资。点击直接拾取并实时增加备弹/恢复品数量。"
 			action = "【鼠标左键】 立即拾取"
 			tier_col = Color("#38bdf8")
-
 	elif kind == "item":
 		var it: Dictionary = hovered_slot["item"]
 		var it_id: String = str(it.get("id", ""))
 		match it_id:
-			"light": title = "轻型弹药"; desc = "适用于 R-301、R-99 等轻型武器。"; tier_col = Color("#f97316")
-			"heavy": title = "重型弹药"; desc = "适用于 VK-47 平行步枪、CAR 等重型武器。"; tier_col = Color("#14b8a6")
-			"energy": title = "能量弹药"; desc = "适用于 哈沃克、复仇女神等能量武器。"; tier_col = Color("#84cc16")
-			"shotgun": title = "霰弹枪弹药"; desc = "适用于 和平捍卫者、獒犬等霰弹枪。"; tier_col = Color("#ef4444")
-			"sniper": title = "狙击弹药"; desc = "适用于 哨兵、充能步枪等狙击枪。"; tier_col = Color("#38bdf8")
-			"shield_battery": title = "大型护盾电池 (大电)"; desc = "5.0秒完全充满所有护盾槽位。"; action = "[左键]立即打电  [右键]丢弃"; tier_col = Color("#38bdf8")
-			"shield_cell": title = "小型护盾电池 (小电)"; desc = "3.0秒充能 1 格护盾 (25 HP)。"; action = "[左键]立即使用  [右键]丢弃"; tier_col = Color("#38bdf8")
-			"med_kit": title = "医疗箱 (大药)"; desc = "8.0秒完全恢复所有失去的生命值。"; action = "[左键]立即使用  [右键]丢弃"; tier_col = Color("#22c55e")
-			"syringe": title = "注射器 (小药)"; desc = "5.0秒恢复 25 点生命值。"; action = "[左键]立即使用  [右键]丢弃"; tier_col = Color("#22c55e")
+			"light": title = "轻型弹药"; desc = "适用于 R-301、R-99、转换者、G7、RE-45、P2020。"; tier_col = Color("#f97316")
+			"heavy": title = "重型弹药"; desc = "适用于 平行步枪、赫姆洛克、猎兽、CAR、暴走、30-30、辅助手枪。"; tier_col = Color("#14b8a6")
+			"energy": title = "能量弹药"; desc = "适用于 哈沃克、复仇女神、电能冲锋枪、专注机枪、L-STAR、三重式。"; tier_col = Color("#84cc16")
+			"shotgun": title = "霰弹枪弹药"; desc = "适用于 和平捍卫者、獒犬、EVA-8、莫桑比克。"; tier_col = Color("#ef4444")
+			"sniper": title = "狙击弹药"; desc = "适用于 哨兵、充能步枪、长弓精确步枪。"; tier_col = Color("#38bdf8")
+			"arrows": title = "博塞克复合弓箭矢"; desc = "适用于 博塞克复合弓 (Bocek)。"; tier_col = Color("#f59e0b")
+			"shield_battery": title = "大型护盾电池 (大电)"; desc = "5.0秒完全充满所有护盾槽位。"; action = "[左键]立即打大电  [右键]丢弃"; tier_col = Color("#38bdf8")
+			"shield_cell": title = "小型护盾电池 (小电)"; desc = "3.0秒充能 1 格护盾 (25 HP)。"; action = "[左键]立即打小电  [右键]丢弃"; tier_col = Color("#38bdf8")
+			"med_kit": title = "医疗箱 (大药)"; desc = "8.0秒完全恢复所有失去的生命值。"; action = "[左键]立即打大药  [右键]丢弃"; tier_col = Color("#22c55e")
+			"syringe": title = "注射器 (小药)"; desc = "5.0秒恢复 25 点生命值。"; action = "[左键]立即打小药  [右键]丢弃"; tier_col = Color("#22c55e")
 			"phoenix_kit": title = "凤凰治疗包"; desc = "10.0秒完全恢复全部生命与所有护盾。"; action = "[左键]立即使用  [右键]丢弃"; tier_col = Color("#fbbf24")
 			"arc_star": title = "电弧星"; desc = "吸附目标造成电击减速并破除护盾。"; tier_col = Color("#38bdf8")
 			"frag": title = "破片手雷"; desc = "延时高爆破片手雷。"; tier_col = Color("#f97316")
 			"thermite": title = "铝热剂手雷"; desc = "横向燃烧火墙持续灼烧。"; tier_col = Color("#ef4444")
 			_: title = str(it.get("name", it_id)); desc = "战术战备物资。"; tier_col = _get_tier_color(int(it.get("tier", 2)))
-
 	elif kind == "attachment":
 		var ak: String = str(hovered_slot.get("att_type", ""))
 		var tier: int = int(hovered_slot.get("tier", 0))
@@ -1270,11 +1252,7 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 		elif tier > 0:
 			var att_names: Dictionary = {"barrel": "枪口补偿器", "mag": "加长弹匣", "stock": "战术枪托", "hopup": "专属枪械辅助芯片"}
 			title = "Lv.%d %s" % [tier, att_names.get(ak, "配件")]
-			match ak:
-				"barrel": desc = "大幅降低后坐力水平与垂直散布。"
-				"mag": desc = "大幅提高弹匣装弹量与战术换弹速度。"
-				"stock": desc = "提升拔枪、收枪与瞄准操控速度。"
-				"hopup": desc = "激发武器特殊强力攻击性能。"
+			desc = "强化武器后坐力控制、弹匣容量或战术换弹速度。"
 			action = "【左键拖动】转移至另一武器  【右键】卸下至背包"
 		else:
 			var att_names: Dictionary = {"barrel": "枪口槽位", "mag": "弹匣槽位", "optic": "瞄准镜槽位", "stock": "枪托槽位", "hopup": "辅助器槽位"}
@@ -1282,7 +1260,6 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 			desc = "当前未安装配件。可将背包或战利品中的配件拖入安装。"
 			action = "【拖入配件】安装至武器"
 			tier_col = Color("#64748b")
-
 	elif kind == "equipment":
 		var gk: String = str(hovered_slot["gear_type"])
 		var tier: int = int(hovered_slot["tier"])
@@ -1310,9 +1287,6 @@ func _draw_hover_tooltip(vp: Vector2) -> void:
 	if action != "":
 		draw_string(font, Vector2(card_r.position.x + 12, card_r.position.y + 90), action, HORIZONTAL_ALIGNMENT_LEFT, 255, 11, Color("#fde047"))
 
-## ============================================================================
-## 9. Helper Vector Drawing Functions
-## ============================================================================
 func _get_item_display_name(it_id: String) -> String:
 	match it_id:
 		"shield_battery": return "大型护盾电池"
@@ -1328,6 +1302,7 @@ func _get_item_display_name(it_id: String) -> String:
 		"energy": return "能量弹药"
 		"shotgun": return "霰弹枪弹药"
 		"sniper": return "狙击弹药"
+		"arrows": return "复合弓箭矢"
 		_: return it_id
 
 func _get_ammo_color(ammo_type: String) -> Color:
@@ -1337,6 +1312,7 @@ func _get_ammo_color(ammo_type: String) -> Color:
 		"energy": return Color("#84cc16")
 		"shotgun": return Color("#ef4444")
 		"sniper": return Color("#38bdf8")
+		"arrows": return Color("#f59e0b")
 		"mythic": return Color("#dc2626")
 		_: return Color("#38bdf8")
 
@@ -1448,6 +1424,11 @@ func _draw_attachment_slot(r: Rect2, att_type: String, tier: int, _optic_id: Str
 func _draw_inventory_item_icon(r: Rect2, it_type: String, it_id: String, it: Dictionary) -> void:
 	var c := r.get_center()
 	match it_type:
+		"weapon":
+			var wid: String = str(it.get("id", "r301"))
+			var wep: Dictionary = GameData.get_weapon_by_id(wid)
+			var acol: Color = _get_ammo_color(str(wep.get("ammo", "light")))
+			_draw_weapon_silhouette(Rect2(r.position.x + 2, r.position.y + 10, r.size.x - 4, r.size.y - 20), wid, str(wep.get("cat", "AR")), acol)
 		"ammo":
 			_draw_ammo_badge(c, it_id, 16.0)
 		"consumable":
@@ -1492,7 +1473,7 @@ func _draw_inventory_item_icon(r: Rect2, it_type: String, it_id: String, it: Dic
 					draw_rect(Rect2(c.x - 6, c.y - 13, 12, 26), Color("#ea580c"), true)
 					draw_circle(c, 4.0, Color("#fde047"))
 		"attachment":
-			_draw_attachment_slot(Rect2(c.x - 18, c.y - 18, 36, 36), "optic" if str(it.get("id","")).begins_with("3x") else "barrel", int(it.get("tier", 3)), "")
+			_draw_attachment_slot(Rect2(c.x - 18, c.y - 18, 36, 36), str(it.get("att_type", "optic" if str(it.get("id", "")).begins_with("3x") else "barrel")), int(it.get("tier", 3)), "")
 
 func _draw_gear_icon(c: Vector2, gear_type: String, _tier: int, col: Color) -> void:
 	match gear_type:

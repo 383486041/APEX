@@ -1,12 +1,14 @@
 extends Node
 ## PlayerState Autoload Singleton
-## Tracks persistent account progression, currencies, selected Legend/Mode, and live Match Combat State.
+## Tracks persistent account progression, currencies, selected Legend/Mode, live Match Combat State,
+## Consumable Healing/Battery Cast State, and Unified Inventory / Looting Synchronization.
 
 signal state_updated
 signal evo_leveled_up(new_level: int, tier_name: String)
 signal killfeed_pushed(msg: String, col: Color)
 signal toast_pushed(msg: String, kind: String)
 signal hit_feedback_pushed(target_name: String, single_dmg: int, cumulative_dmg: int, is_headshot: bool, shield_tier: int, cracked_now: bool)
+signal shotgun_pellet_feedback_pushed(pattern_name: String, hit_mask: Array, is_headshot: bool)
 signal enemy_eliminated(victim_name: String, weapon_name: String, total_kills: int)
 signal floating_damage_spawned(pos: Vector3, dmg: int, is_headshot: bool, shield_tier: int, cracked: bool)
 signal deathbox_spawn_requested(pos: Vector3, bot_name: String, evo_tier: int, weapon_name: String)
@@ -28,7 +30,7 @@ var heirloom_shards: int = 150
 var career_wins: int = 64
 var career_kills: int = 1482
 
-# Live Match State (100% matched to reference screenshot)
+# Live Match State
 var match_active: bool = false
 var ui_modal_open: bool = false
 var inventory_open: bool = false
@@ -44,8 +46,8 @@ var chosen_upgrades: Dictionary = {"lv2": "", "lv3": ""}
 var active_slot: int = 1
 var scope_alt_zoom: bool = false # 0: Primary, 1: Secondary, 2: Heirloom Melee
 var loadout: Array = [
-	{"weapon_id": "mozambique", "ammo": 6, "max_ammo": 6, "optic": "1x_threat", "barrel": 0, "mag": 0, "stock": 2, "hopup": "", "charged": 0.0},
-	{"weapon_id": "r301", "ammo": 18, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0}
+	{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 3, "mag": 3, "stock": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
+	{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
 ]
 var gear: Dictionary = {
 	"helmet": 2,
@@ -54,12 +56,14 @@ var gear: Dictionary = {
 	"backpack": 2,
 	"survival": "heat_shield"
 }
-var ammo_reserve: Dictionary = {"light": 36, "heavy": 180, "energy": 180, "shotgun": 16, "sniper": 80, "mythic": 60}
-var consumables: Dictionary = {"shield_cell": 5, "shield_battery": 2, "syringe": 5, "med_kit": 2, "phoenix_kit": 1}
-var selected_heal_id: String = "syringe"
+var ammo_reserve: Dictionary = {"light": 180, "heavy": 180, "energy": 180, "shotgun": 48, "sniper": 84, "arrows": 60, "mythic": 60}
+var consumables: Dictionary = {"shield_cell": 6, "shield_battery": 3, "syringe": 6, "med_kit": 2, "phoenix_kit": 1}
+var selected_heal_id: String = "shield_battery"
+var active_heal_id: String = "" # Currently casting consumable ("shield_battery", "shield_cell", "med_kit", "syringe", "phoenix_kit")
 var heal_cast_timer: float = 0.0
 var heal_cast_total: float = 0.0
-var ordnance: Dictionary = {"frag": 1, "arc_star": 1, "thermite": 1}
+var ordnance: Dictionary = {"frag": 2, "arc_star": 2, "thermite": 2}
+var selected_ordnance_id: String = "arc_star"
 var materials: int = 125
 
 var inventory_items: Array = [
@@ -69,7 +73,7 @@ var inventory_items: Array = [
 	{"type": "ammo", "id": "heavy", "count": 60},
 	{"type": "ammo", "id": "energy", "count": 60},
 	{"type": "consumable", "id": "shield_battery", "count": 2},
-	{"type": "consumable", "id": "shield_battery", "count": 2},
+	{"type": "consumable", "id": "shield_battery", "count": 1},
 	{"type": "consumable", "id": "shield_cell", "count": 4},
 	{"type": "consumable", "id": "med_kit", "count": 2},
 	{"type": "consumable", "id": "syringe", "count": 4},
@@ -105,6 +109,7 @@ func reset_for_match() -> void:
 	match_ended = false
 	current_deathbox = {}
 	ui_modal_open = false
+	inventory_open = false
 	hp = 100.0
 	max_hp = 100.0
 	kills = 0
@@ -136,16 +141,19 @@ func reset_for_match() -> void:
 	scan_timer = 0.0
 	double_time_timer = 0.0
 	heal_cast_timer = 0.0
+	heal_cast_total = 0.0
+	active_heal_id = ""
 	gun_shield_hp = 50.0
 	vtol_fuel = 100.0
 	passive_warning_text = ""
 	active_slot = 1
 	loadout = [
-		{"weapon_id": "mozambique", "ammo": 6, "max_ammo": 6, "optic": "1x_threat", "barrel": 0, "mag": 0, "stock": 2, "hopup": "", "charged": 0.0},
-		{"weapon_id": "r301", "ammo": 18, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0}
+		{"weapon_id": "peacekeeper", "ammo": 5, "max_ammo": 5, "optic": "1x_threat", "barrel": 3, "mag": 3, "stock": 3, "hopup": "choke", "charged": 0.0, "fire_mode_idx": 0},
+		{"weapon_id": "r301", "ammo": 28, "max_ammo": 28, "optic": "2x_bruiser", "barrel": 3, "mag": 3, "stock": 3, "hopup": "anvil", "charged": 0.0, "fire_mode_idx": 0}
 	]
-	ammo_reserve["light"] = 36
-	ammo_reserve["shotgun"] = 16
+	ammo_reserve = {"light": 180, "heavy": 180, "energy": 180, "shotgun": 48, "sniper": 84, "arrows": 60, "mythic": 60}
+	consumables = {"shield_cell": 6, "shield_battery": 3, "syringe": 6, "med_kit": 2, "phoenix_kit": 1}
+	ordnance = {"frag": 2, "arc_star": 2, "thermite": 2}
 	state_updated.emit()
 
 func add_damage_and_evo(dmg: int) -> void:
@@ -169,9 +177,41 @@ func add_damage_and_evo(dmg: int) -> void:
 func perform_armor_swap(target_evo_level: int) -> void:
 	if target_evo_level > evo_level:
 		evo_level = target_evo_level
-		var tier: Dictionary = GameData.get_evo_tier(evo_level)
-		max_shield = float(tier["max_shield"])
+	gear["armor"] = evo_level
+	var tier: Dictionary = GameData.get_evo_tier(evo_level)
+	max_shield = float(tier["max_shield"])
 	shield = max_shield
 	AudioSynthesizer.play_evo_level_up()
-	toast_pushed.emit("⚡ 死亡之箱一键秒换护盾核心成功！护盾已回满 100%！", "evo")
+	toast_pushed.emit("⚡ 护盾核心替换成功！护盾已充能至 100%% (%d HP)！" % int(max_shield), "evo")
+	state_updated.emit()
+
+## Unified helper for picking up loot from Supply Bins, Loot Ticks, Ground, or Deathboxes
+func add_loot_item(item: Dictionary) -> void:
+	var it_type: String = str(item.get("type", ""))
+	var it_id: String = str(item.get("id", ""))
+	var count: int = maxi(1, int(item.get("count", 1)))
+
+	match it_type:
+		"ammo":
+			ammo_reserve[it_id] = int(ammo_reserve.get(it_id, 0)) + count
+			inventory_items.append({"type": "ammo", "id": it_id, "count": count})
+		"consumable":
+			consumables[it_id] = int(consumables.get(it_id, 0)) + count
+			inventory_items.append({"type": "consumable", "id": it_id, "count": count})
+		"ordnance":
+			ordnance[it_id] = int(ordnance.get(it_id, 0)) + count
+			inventory_items.append({"type": "ordnance", "id": it_id, "count": count})
+		"gear":
+			var g_type: String = str(item.get("gear_type", "armor"))
+			var tier: int = int(item.get("tier", 3))
+			if g_type == "armor":
+				perform_armor_swap(tier)
+				return
+			else:
+				gear[g_type] = maxi(int(gear.get(g_type, 1)), tier)
+		"attachment":
+			inventory_items.append(item.duplicate(true))
+		_:
+			inventory_items.append(item.duplicate(true))
+
 	state_updated.emit()

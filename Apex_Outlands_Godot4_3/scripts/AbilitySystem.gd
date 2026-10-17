@@ -1,19 +1,13 @@
 class_name AbilitySystem
 extends Node3D
 ## Complete 3D Legend Skills, Deployables, Healing & Ordnance System for Godot 4.3.
-## Implements Passive, Tactical (Q), and Ultimate (Z) abilities for all 12 Legends:
-## - Wraith: Voices from the Void Passive + Into the Void Phase (Q) + Linked Dimensional Rift Portals (Z)
-## - Octane: Swift Mend Passive + Stim Injection (Q) + 3D Launch Pad Jump Pad (Z)
-## - Bloodhound: Tracker Clues + Eye of the Allfather 3D Sonar Dome (Q) + Beast of the Hunt (Z)
-## - Pathfinder: Insider Knowledge + 45m 3D Grappling Hook (Q) + 120m 3D Zipline Gun (Z)
-## - Lifeline: Glide Passive + 3D Hovering D.O.C. Heal Drone (Q) + D.O.C. Halo & Care Package Drop (Z)
-## - Gibraltar: Gun Shield + 6.5m 3D Dome of Protection (Q) + Defensive Bombardment Artillery (Z)
-## - Bangalore: Double Time + 3-Canister Smoke Wall (Q) + Rolling Thunder Barrage (Z)
-## - Horizon: Spacewalk + 18m Vertical Gravity Lift Vortex (Q) + N.E.W.T. Black Hole Singularity (Z)
-## - Ash: Death Mark + Spinning Arc Snare Tether (Q) + 45m Phase Breach Sword Blink (Z)
-## - Valkyrie: VTOL Jetpack + 12-Rocket Missile Swarm (Q) + Skyward Dive Redeploy (Z)
-## - Caustic: Nox Vision + 3D Nox Gas Traps (Q) + Nox Gas Grenade Cloud (Z)
-## - Mirage: Encore + 3D Holographic Decoy (Q) + Life of the Party 6-Decoy Ring (Z)
+## Fixes & Upgrades:
+## - Raycast Wall-Clamping (`_raycast_clamp_position`) so Wraith Portals, Ash Phase Breach, Loba Jump Drive,
+##   Pathfinder Grapple/Zipline, and Horizon Black Hole NEVER teleport or pull characters through walls!
+## - Full support for all 12 Outlands Legends (Wraith, Bloodhound, Octane, Pathfinder, Gibraltar, Valkyrie,
+##   Bangalore, Caustic, Horizon, Loba, Fuse, Conduit, plus Lifeline/Ash/Mirage compatibility).
+## - Authentic Consumable Cast Times (Cell 3s, Battery 5s, Syringe 5s, MedKit 8s, Phoenix Kit 10s) with
+##   progressive acoustic feedback (rising turbine whine / bio-injector pulse) and movement interruption check.
 
 var player: PlayerController
 var world_root: Node3D
@@ -27,6 +21,35 @@ var gravity_lifts: Array = []   # [{pos: Vector3, expire: float, node: Node3D}]
 var black_holes: Array = []     # [{pos: Vector3, expire: float, node: Node3D}]
 var doc_drones: Array = []      # [{pos: Vector3, expire: float, node: Node3D}]
 var gas_clouds: Array = []      # [{pos: Vector3, radius: float, expire: float, node: Node3D}]
+
+var heal_audio_tick: float = 0.0
+
+func _raycast_clamp_position(from_pt: Vector3, to_pt: Vector3, clearance: float = 1.1) -> Vector3:
+	## Prevents abilities (Portals, Phase Breach, Jump Drive, Grapple, Zipline) from clipping through walls!
+	if world_root == null or world_root.get_world_3d() == null:
+		return to_pt
+	var space_state := world_root.get_world_3d().direct_space_state
+	if space_state == null:
+		return to_pt
+	var q := PhysicsRayQueryParameters3D.create(from_pt, to_pt, 1)
+	var hit: Dictionary = space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var hit_pos: Vector3 = hit["position"]
+		var hit_norm: Vector3 = hit.get("normal", (from_pt - to_pt).normalized())
+		return hit_pos + hit_norm * clearance
+	return to_pt
+
+func _raycast_ground_height(xz_pos: Vector3) -> float:
+	if world_root == null or world_root.get_world_3d() == null:
+		return 0.0
+	var space_state := world_root.get_world_3d().direct_space_state
+	if space_state == null:
+		return 0.0
+	var q := PhysicsRayQueryParameters3D.create(Vector3(xz_pos.x, 45.0, xz_pos.z), Vector3(xz_pos.x, -5.0, xz_pos.z), 1)
+	var hit: Dictionary = space_state.intersect_ray(q)
+	if not hit.is_empty():
+		return maxf(0.0, float(hit["position"].y))
+	return 0.0
 
 func _process(delta: float) -> void:
 	if player == null or world_root == null:
@@ -49,9 +72,14 @@ func _process(delta: float) -> void:
 	if PlayerState.double_time_timer > 0.0:
 		PlayerState.double_time_timer = maxf(0.0, PlayerState.double_time_timer - delta)
 
-	# 2. Tick Healing Cast Timer (Key 4)
+	# 2. Tick Healing Cast Timer (Key 4) + Progressive Acoustic Feedback
 	if PlayerState.heal_cast_timer > 0.0:
 		PlayerState.heal_cast_timer -= delta
+		heal_audio_tick += delta
+		if heal_audio_tick >= 0.42:
+			heal_audio_tick = 0.0
+			var prog: float = 1.0 - clampf(PlayerState.heal_cast_timer / maxf(0.1, PlayerState.heal_cast_total), 0.0, 1.0)
+			AudioSynthesizer.play_consumable_progress(PlayerState.active_heal_id, prog)
 		if PlayerState.heal_cast_timer <= 0.0:
 			PlayerState.heal_cast_timer = 0.0
 			_complete_heal_item()
@@ -59,16 +87,16 @@ func _process(delta: float) -> void:
 	# 3. Legend Passive Skills Tick
 	_process_passives(delta)
 
-	# 4. Tick 3D Deployables (Jump Pads, Portals, Gravity Lifts, Black Holes, D.O.C. Drones, Gas Clouds)
+	# 4. Tick 3D Deployables
 	_process_deployables(delta)
 
 func _process_passives(delta: float) -> void:
 	var lid: String = PlayerState.selected_legend_id
-	# Octane Swift Mend Passive
 	if lid == "octane" and PlayerState.stim_timer <= 0.0 and PlayerState.hp < PlayerState.max_hp:
 		PlayerState.hp = minf(PlayerState.max_hp, PlayerState.hp + 3.5 * delta)
+	elif lid == "conduit" and PlayerState.shield < PlayerState.max_shield:
+		PlayerState.shield = minf(PlayerState.max_shield, PlayerState.shield + 1.5 * delta)
 
-	# Wraith Voices from the Void & Bloodhound Tracker Passive
 	var nearest_dist: float = 999.0
 	var aiming_at_player: int = 0
 	for bot in enemies:
@@ -123,44 +151,49 @@ func _process_deployables(delta: float) -> void:
 	for i in range(gravity_lifts.size() - 1, -1, -1):
 		var gl: Dictionary = gravity_lifts[i]
 		if now >= float(gl["expire"]):
-			if is_instance_valid(gl["node"]): gl["node"].queue_free()
+			if is_instance_valid(gl["node"]):
+				gl["node"].queue_free()
 			gravity_lifts.remove_at(i)
 			continue
 		if Vector2(p_pos.x, p_pos.z).distance_to(Vector2(gl["pos"].x, gl["pos"].z)) < 2.6 and p_pos.y < gl["pos"].y + 18.0:
 			player.velocity.y = 14.5
 
-	# Horizon N.E.W.T. Black Holes (Pulls Enemies In)
+	# Horizon N.E.W.T. Black Holes (Pulls Enemies via velocity, respecting walls!)
 	for i in range(black_holes.size() - 1, -1, -1):
 		var bh: Dictionary = black_holes[i]
 		if now >= float(bh["expire"]):
-			if is_instance_valid(bh["node"]): bh["node"].queue_free()
+			if is_instance_valid(bh["node"]):
+				bh["node"].queue_free()
 			black_holes.remove_at(i)
 			continue
 		for bot in enemies:
 			if is_instance_valid(bot) and bot.hp > 0.0:
 				var d: float = bot.global_position.distance_to(bh["pos"])
-				if d < 18.0 and d > 1.2:
-					bot.global_position = bot.global_position.lerp(bh["pos"], delta * 3.8)
+				if d < 18.0 and d > 1.4:
+					var pull_dir: Vector3 = (bh["pos"] - bot.global_position).normalized()
+					bot.velocity += Vector3(pull_dir.x, 0, pull_dir.z) * 18.0 * delta
 					bot.scanned_timer = 1.0
 
-	# Lifeline D.O.C. Healing Drones
+	# Lifeline / Conduit Healing Fields
 	for i in range(doc_drones.size() - 1, -1, -1):
 		var dd: Dictionary = doc_drones[i]
 		if now >= float(dd["expire"]):
-			if is_instance_valid(dd["node"]): dd["node"].queue_free()
+			if is_instance_valid(dd["node"]):
+				dd["node"].queue_free()
 			doc_drones.remove_at(i)
 			continue
 		if is_instance_valid(dd["node"]):
 			dd["node"].rotation.y += delta * 2.5
 		if p_pos.distance_to(dd["pos"]) < 8.5:
 			PlayerState.hp = minf(PlayerState.max_hp, PlayerState.hp + 15.0 * delta)
-			PlayerState.shield = minf(PlayerState.max_shield, PlayerState.shield + 8.0 * delta)
+			PlayerState.shield = minf(PlayerState.max_shield, PlayerState.shield + 10.0 * delta)
 
-	# Caustic Nox Gas / Thermite Clouds
+	# Caustic Nox Gas / Fuse Motherlode Fire Clouds
 	for i in range(gas_clouds.size() - 1, -1, -1):
 		var gc: Dictionary = gas_clouds[i]
 		if now >= float(gc["expire"]):
-			if is_instance_valid(gc["node"]): gc["node"].queue_free()
+			if is_instance_valid(gc["node"]):
+				gc["node"].queue_free()
 			gas_clouds.remove_at(i)
 			continue
 		for bot in enemies:
@@ -168,12 +201,15 @@ func _process_deployables(delta: float) -> void:
 				if bot.global_position.distance_to(gc["pos"]) < float(gc["radius"]):
 					bot.scanned_timer = 1.5
 					if randf() < delta * 2.5:
-						bot.apply_damage(8, false, "夜神毒气 / 铝热剂")
+						bot.apply_damage(9, false, "区域持续灼烧/毒气")
 
 func use_tactical() -> void:
 	if PlayerState.tac_cooldown > 0.0:
 		PlayerState.toast_pushed.emit("⏳ 战术技能冷却中 (%.1fs)" % PlayerState.tac_cooldown, "warn")
 		return
+
+	# Cancel active heal if casting tactical
+	PlayerState.heal_cast_timer = 0.0
 
 	var leg: Dictionary = GameData.get_legend_by_id(PlayerState.selected_legend_id)
 	var lid: String = str(leg["id"])
@@ -186,19 +222,22 @@ func use_tactical() -> void:
 
 	var origin: Vector3 = player.camera.global_position
 	var fwd: Vector3 = -player.camera.global_transform.basis.z
-	var target_ground: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 12.0
-	target_ground.y = 0.0
+	var raw_target: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 14.0
+	var target_ground: Vector3 = _raycast_clamp_position(origin, raw_target + Vector3(0, 1.0, 0), 1.0)
+	target_ground.y = _raycast_ground_height(target_ground)
+
+	BehaviorRecorder.record_event("use_tactical", {"legend": lid})
 
 	match lid:
 		"wraith":
 			AudioSynthesizer.play_ability("void")
 			PlayerState.void_timer = 4.0
-			PlayerState.toast_pushed.emit("🌀 【踏入虚空】：进入跨维度虚空通道 4 秒，免疫伤害且移速 +35%！", "evo")
+			PlayerState.toast_pushed.emit("🌀 【踏入虚空】：进入跨维度虚空通道 4 秒，免疫伤害且移速 +32%！", "evo")
 		"octane":
 			AudioSynthesizer.play_ability("stim")
 			PlayerState.hp = maxf(1.0, PlayerState.hp - 12.0)
 			PlayerState.stim_timer = 6.0
-			PlayerState.toast_pushed.emit("💉 【兴奋剂】：肾上腺素注入！冲刺速度 +35%，换弹加速！", "evo")
+			PlayerState.toast_pushed.emit("💉 【兴奋剂】：肾上腺素注入！冲刺速度 +32%，换弹加速！", "evo")
 		"bloodhound":
 			AudioSynthesizer.play_ability("scan")
 			PlayerState.scan_timer = 5.0
@@ -210,8 +249,9 @@ func use_tactical() -> void:
 					count += 1
 			PlayerState.toast_pushed.emit("👁️ 【上帝之眼】：声呐脉冲已透视锁定 %d 名敌方目标！" % count, "evo")
 		"pathfinder":
-			var hook_pt: Vector3 = origin + fwd * 32.0
-			hook_pt.y = maxf(4.5, hook_pt.y + 6.0)
+			var desired_hook: Vector3 = origin + fwd * 32.0
+			var hook_pt: Vector3 = _raycast_clamp_position(origin, desired_hook, 0.5)
+			hook_pt.y = maxf(3.5, hook_pt.y)
 			player.start_grapple(hook_pt)
 			PlayerState.toast_pushed.emit("🪝 【机械钩爪】：抓钩已锚定！摆锤高速弹射飞跃！", "evo")
 		"lifeline":
@@ -223,7 +263,7 @@ func use_tactical() -> void:
 			_spawn_dome_shield(player.global_position)
 			PlayerState.toast_pushed.emit("🛡️ 【保护圆顶】：6.5m 能量护罩已展开，阻挡一切火力 12 秒！", "evo")
 		"bangalore":
-			AudioSynthesizer.play_gunshot("SHOTGUN")
+			AudioSynthesizer.play_gunshot("SHOTGUN", "eva8")
 			for s in [-1, 0, 1]:
 				var sp_pos: Vector3 = target_ground + player.global_transform.basis.x * float(s) * 4.2
 				_spawn_smoke_sphere(sp_pos, Color(0.65, 0.72, 0.82, 0.55), 5.5, 11.0)
@@ -231,14 +271,35 @@ func use_tactical() -> void:
 			PlayerState.toast_pushed.emit("💨 【烟雾发射器】：三联装高爆战术烟墙已封锁战区！", "info")
 		"horizon":
 			AudioSynthesizer.play_ability("void")
-			_spawn_gravity_lift(player.global_position + Vector3(fwd.x * 3.5, 0, fwd.z * 3.5))
+			var gl_pos: Vector3 = _raycast_clamp_position(origin, player.global_position + Vector3(fwd.x * 3.5, 1.0, fwd.z * 3.5), 0.8)
+			gl_pos.y = _raycast_ground_height(gl_pos)
+			_spawn_gravity_lift(gl_pos)
 			PlayerState.toast_pushed.emit("🌌 【重力电梯】：反重力上升气流已激活！步入即可升空！", "evo")
+		"loba":
+			# Loba Burglar's Best Friend Jump Drive Bracelet (Raycast-safe teleport!)
+			AudioSynthesizer.play_ability("void")
+			var desired_tp: Vector3 = origin + fwd * 28.0
+			var safe_tp: Vector3 = _raycast_clamp_position(origin, desired_tp, 1.2)
+			safe_tp.y = maxf(_raycast_ground_height(safe_tp) + 0.2, safe_tp.y if safe_tp.y < 14.0 else 0.2)
+			player.global_position = safe_tp
+			PlayerState.toast_pushed.emit("💍 【窃贼良伴】：跃迁手环已安全传送至目标位置！", "evo")
+		"fuse":
+			# Fuse Knuckle Cluster (連続集束炸裂)
+			AudioSynthesizer.play_gunshot("SHOTGUN", "mastiff")
+			_spawn_missile_swarm(target_ground)
+			PlayerState.toast_pushed.emit("💥 【指虎集束炸弹】：连续空气爆裂弹已在目标区引爆！", "evo")
+		"conduit":
+			# Conduit Radiant Transfer (弧光护盾充能)
+			AudioSynthesizer.play_evo_level_up()
+			PlayerState.shield = minf(PlayerState.max_shield, PlayerState.shield + 50.0)
+			_spawn_doc_drone(player.global_position + Vector3(0, 1.2, 0))
+			PlayerState.toast_pushed.emit("⚡ 【弧光传输】：泰坦电池脉冲已瞬间为你补充 50 点护盾！", "evo")
 		"ash":
 			AudioSynthesizer.play_ability("scan")
 			_spawn_arc_snare(target_ground)
 			PlayerState.toast_pushed.emit("⚡ 【电弧陷阱】：电磁飞盘已束缚并感电目标区域敌人！", "evo")
 		"valkyrie":
-			AudioSynthesizer.play_gunshot("SHOTGUN")
+			AudioSynthesizer.play_gunshot("SHOTGUN", "peacekeeper")
 			_spawn_missile_swarm(target_ground)
 			PlayerState.toast_pushed.emit("🚀 【导弹群】：12 枚制导微型火箭弹已覆盖目标区！", "evo")
 		"caustic":
@@ -257,27 +318,31 @@ func use_ultimate() -> void:
 		PlayerState.toast_pushed.emit("⏳ 终极技能充能中 (%d%%)" % int(PlayerState.ult_charge), "warn")
 		return
 	PlayerState.ult_charge = 0.0
+	PlayerState.heal_cast_timer = 0.0
 
 	var leg: Dictionary = GameData.get_legend_by_id(PlayerState.selected_legend_id)
 	var lid: String = str(leg["id"])
+	var origin: Vector3 = player.camera.global_position
 	var fwd: Vector3 = -player.camera.global_transform.basis.z
 	var flat_fwd: Vector3 = Vector3(fwd.x, 0, fwd.z).normalized()
-	var target_ground: Vector3 = player.global_position + flat_fwd * 22.0
-	target_ground.y = 0.0
+	var target_ground: Vector3 = _raycast_clamp_position(origin, player.global_position + flat_fwd * 22.0 + Vector3(0, 1.0, 0), 1.2)
+	target_ground.y = _raycast_ground_height(target_ground)
 
+	BehaviorRecorder.record_event("use_ultimate", {"legend": lid})
 	AudioSynthesizer.play_evo_level_up()
 
 	match lid:
 		"wraith":
 			var pos_a: Vector3 = player.global_position
-			var pos_b: Vector3 = player.global_position + flat_fwd * 32.0
-			pos_b.y = 0.0
+			var raw_b: Vector3 = player.global_position + flat_fwd * 32.0 + Vector3(0, 1.0, 0)
+			var pos_b: Vector3 = _raycast_clamp_position(origin, raw_b, 1.2)
+			pos_b.y = _raycast_ground_height(pos_b)
 			_spawn_void_portal_pair(pos_a, pos_b)
 			player.global_position = pos_b + Vector3(0, 0.5, 0)
-			PlayerState.toast_pushed.emit("🌀 【维度裂隙】：双向虚空传送门已连通！步入任意门即可瞬移！", "evo")
+			PlayerState.toast_pushed.emit("🌀 【维度裂隙】：双向虚空传送门已安全连通！步入任意门即可瞬移！", "evo")
 		"octane":
-			var pad_pos: Vector3 = player.global_position + flat_fwd * 4.5
-			pad_pos.y = 0.0
+			var pad_pos: Vector3 = _raycast_clamp_position(origin, player.global_position + flat_fwd * 4.5 + Vector3(0, 1.0, 0), 1.0)
+			pad_pos.y = _raycast_ground_height(pad_pos)
 			_spawn_jump_pad(pad_pos)
 			PlayerState.toast_pushed.emit("🚀 【弹射跳垫】：跳垫已部署！踩上跳垫可高空飞跃并二段跳！", "evo")
 		"bloodhound":
@@ -285,37 +350,42 @@ func use_ultimate() -> void:
 			for bot in enemies:
 				if is_instance_valid(bot) and bot.hp > 0.0:
 					bot.set_scanned(18.0)
-			PlayerState.toast_pushed.emit("🐺 【狩猎野兽】：众神之父赐予感官！18秒全屏红影透视 + 35%移速！", "evo")
+			PlayerState.toast_pushed.emit("🐺 【狩猎野兽】：众神之父赐予感官！18秒全屏红影透视 + 32%移速！", "evo")
 		"pathfinder":
 			var zip_start: Vector3 = player.global_position + Vector3(0, 2.2, 0)
-			var zip_end: Vector3 = player.global_position + flat_fwd * 65.0 + Vector3(0, 12.0, 0)
+			var raw_zip_end: Vector3 = player.global_position + flat_fwd * 58.0 + Vector3(0, 10.0, 0)
+			var zip_end: Vector3 = _raycast_clamp_position(zip_start, raw_zip_end, 1.5)
 			_spawn_zipline(zip_start, zip_end)
 			player.start_zipline(zip_start, zip_end)
 			PlayerState.toast_pushed.emit("🚡 【滑索枪】：高空钢缆滑索已架设并自动挂载滑行！", "evo")
-		"lifeline":
-			var drop_pos: Vector3 = player.global_position + flat_fwd * 6.0
-			drop_pos.y = 0.0
+		"lifeline", "loba", "conduit":
+			var drop_pos: Vector3 = _raycast_clamp_position(origin, player.global_position + flat_fwd * 6.0 + Vector3(0, 1.0, 0), 1.2)
+			drop_pos.y = _raycast_ground_height(drop_pos)
 			_spawn_dome_shield(drop_pos)
 			_spawn_doc_drone(drop_pos + Vector3(0, 1.2, 0))
 			PlayerState.shield = PlayerState.max_shield
 			PlayerState.hp = PlayerState.max_hp
-			PlayerState.toast_pushed.emit("📦 【D.O.C. 光环护盾 & 空投】：全队状态已回满并展开医疗屏障！", "evo")
+			for k in PlayerState.ammo_reserve.keys():
+				PlayerState.ammo_reserve[k] = int(PlayerState.ammo_reserve[k]) + 60
+			PlayerState.consumables["shield_battery"] = int(PlayerState.consumables.get("shield_battery", 0)) + 2
+			PlayerState.toast_pushed.emit("📦 【黑市精品店 / 空投力场】：状态已回满，并自动补充全弹药与大电池！", "evo")
 		"horizon":
 			_spawn_black_hole(target_ground)
 			PlayerState.toast_pushed.emit("🕳️ 【黑洞奇点】：纽特已展开微型黑洞，强力吸附周围所有敌军！", "evo")
 		"ash":
-			var dest: Vector3 = player.global_position + flat_fwd * 38.0
-			dest.y = maxf(1.0, player.global_position.y)
+			var raw_dest: Vector3 = player.global_position + flat_fwd * 36.0 + Vector3(0, 1.0, 0)
+			var dest: Vector3 = _raycast_clamp_position(origin, raw_dest, 1.2)
+			dest.y = maxf(_raycast_ground_height(dest) + 0.2, player.global_position.y)
 			_spawn_void_portal_pair(player.global_position, dest)
 			player.global_position = dest
-			PlayerState.toast_pushed.emit("⚔️ 【相位裂隙】：一剑斩开空间，瞬间闪烁突进 38 米！", "evo")
+			PlayerState.toast_pushed.emit("⚔️ 【相位裂隙】：一剑斩开空间，瞬间安全突进！", "evo")
 		"valkyrie":
 			player.global_position.y = 95.0
 			player.is_skydiving = true
 			PlayerState.toast_pushed.emit("🦅 【天际俯冲】：喷气全开冲入高空，进入滑翔空降模式！", "evo")
-		"caustic":
-			_spawn_gas_cloud(target_ground, 15.0, 15.0)
-			PlayerState.toast_pushed.emit("☣️ 【夜神毒气手雷】：大范围剧毒风暴已笼罩战场！", "evo")
+		"caustic", "fuse":
+			_spawn_gas_cloud(target_ground, 14.0, 14.0)
+			PlayerState.toast_pushed.emit("🔥 【大招区域封锁】：大范围毒气/天降母弹火环已笼罩战场！", "evo")
 		"mirage":
 			for i in range(6):
 				var ang: float = (float(i) / 6.0) * TAU
@@ -323,7 +393,6 @@ func use_ultimate() -> void:
 				_spawn_mirage_decoy(player.global_position + dir * 2.2, dir)
 			PlayerState.toast_pushed.emit("🎪 【派对焦点】：6 个全息幻象分身已围绕四周展开！", "evo")
 		_:
-			# Gibraltar / Bangalore Artillery Bombardment
 			_spawn_artillery_barrage(target_ground)
 			PlayerState.toast_pushed.emit("💥 【轨道火炮轰炸】：密集重炮已轰炸目标区域！", "evo")
 
@@ -335,19 +404,33 @@ func start_heal_item(heal_id: String = "") -> void:
 	var hid: String = PlayerState.selected_heal_id
 	var count: int = int(PlayerState.consumables.get(hid, 0))
 	if count <= 0:
-		PlayerState.toast_pushed.emit("⚠️ 恢复品数量不足！", "warn")
+		PlayerState.toast_pushed.emit("⚠️ 【%s】数量不足！请从物资箱或死亡之箱拾取补充" % GameData.get_consumable_name(hid), "warn")
 		return
-	var cast_t: float = 3.0 if (hid == "shield_cell" or hid == "syringe") else 4.5
+
+	# Check if already at full shield / HP
+	if (hid == "shield_cell" or hid == "shield_battery") and PlayerState.shield >= PlayerState.max_shield:
+		PlayerState.toast_pushed.emit("🛡️ 护盾已满，无需使用电池！", "info")
+		return
+	if (hid == "syringe" or hid == "med_kit") and PlayerState.hp >= PlayerState.max_hp:
+		PlayerState.toast_pushed.emit("❤️ 生命值已满，无需使用医疗品！", "info")
+		return
+
+	var cast_t: float = GameData.get_consumable_cast_time(hid)
 	if PlayerState.evo_level == 4:
-		cast_t *= 0.65
+		cast_t *= 0.75 # Gold Armor / Lv4 fast-heal bonus
+	PlayerState.active_heal_id = hid
 	PlayerState.heal_cast_total = cast_t
 	PlayerState.heal_cast_timer = cast_t
-	AudioSynthesizer.play_ability("stim")
+	heal_audio_tick = 0.0
+
+	AudioSynthesizer.play_consumable_start(hid)
+	BehaviorRecorder.record_event("start_heal", {"heal_id": hid, "cast_time": cast_t})
 	var hname: String = GameData.get_consumable_name(hid)
-	PlayerState.toast_pushed.emit("🔋 正在使用【%s】(%.1fs)..." % [hname, cast_t], "info")
+	PlayerState.toast_pushed.emit("🔋 正在使用【%s】(%.1f秒)... [第一/三人称动作同步中]" % [hname, cast_t], "info")
+	PlayerState.state_updated.emit()
 
 func _complete_heal_item() -> void:
-	var hid: String = PlayerState.selected_heal_id
+	var hid: String = PlayerState.active_heal_id if PlayerState.active_heal_id != "" else PlayerState.selected_heal_id
 	if int(PlayerState.consumables.get(hid, 0)) <= 0:
 		return
 	PlayerState.consumables[hid] = int(PlayerState.consumables[hid]) - 1
@@ -363,19 +446,20 @@ func _complete_heal_item() -> void:
 		"phoenix_kit":
 			PlayerState.hp = PlayerState.max_hp
 			PlayerState.shield = PlayerState.max_shield
-	AudioSynthesizer.play_evo_level_up()
+	AudioSynthesizer.play_consumable_complete(hid)
 	var hname: String = GameData.get_consumable_name(hid)
-	PlayerState.toast_pushed.emit("✨ 【%s】使用完成！状态已补充！" % hname, "evo")
+	PlayerState.toast_pushed.emit("✨ 【%s】使用完成！状态已恢复！" % hname, "evo")
 	PlayerState.state_updated.emit()
 
 func throw_ordnance() -> void:
+	var origin: Vector3 = player.camera.global_position
 	var fwd: Vector3 = -player.camera.global_transform.basis.z
-	var target_pos: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 20.0
-	target_pos.y = 0.5
+	var raw_target: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 20.0 + Vector3(0, 0.5, 0)
+	var target_pos: Vector3 = _raycast_clamp_position(origin, raw_target, 0.6)
+	target_pos.y = maxf(0.4, _raycast_ground_height(target_pos) + 0.4)
 	AudioSynthesizer.play_melee_Whoosh(true)
 	PlayerState.toast_pushed.emit("✦ 已投掷【电弧星 / 破片手雷】！", "info")
 
-	# Spawn projectile visual
 	var proj := MeshInstance3D.new()
 	var sp := SphereMesh.new()
 	sp.radius = 0.22
@@ -386,7 +470,7 @@ func throw_ordnance() -> void:
 	mat.emission = Color("#38bdf8")
 	mat.emission_energy_multiplier = 3.0
 	proj.material_override = mat
-	proj.global_position = player.camera.global_position + fwd * 1.0
+	proj.global_position = origin + fwd * 1.0
 	world_root.add_child(proj)
 
 	var tw := create_tween()
@@ -395,7 +479,7 @@ func throw_ordnance() -> void:
 	tw.tween_callback(func():
 		if is_instance_valid(proj):
 			proj.queue_free()
-		AudioSynthesizer.play_gunshot("SNIPER")
+		AudioSynthesizer.play_gunshot("SNIPER", "kraber")
 		_spawn_smoke_sphere(target_pos, Color(0.22, 0.74, 0.98, 0.55), 6.0, 1.2)
 		for bot in enemies:
 			if is_instance_valid(bot) and bot.hp > 0.0 and bot.global_position.distance_to(target_pos) <= 12.0:
@@ -494,7 +578,7 @@ func _spawn_dome_shield(pos: Vector3) -> void:
 	mat.emission_enabled = true
 	mat.emission = Color("#38bdf8")
 	dome.material_override = mat
-	dome.global_position = Vector3(pos.x, 0.0, pos.z)
+	dome.global_position = Vector3(pos.x, pos.y, pos.z)
 	world_root.add_child(dome)
 	get_tree().create_timer(12.0).timeout.connect(func():
 		if is_instance_valid(dome):
@@ -534,9 +618,9 @@ func _spawn_gravity_lift(pos: Vector3) -> void:
 	mat.emission = Color("#38bdf8")
 	mat.emission_energy_multiplier = 2.4
 	col.material_override = mat
-	col.global_position = Vector3(pos.x, 9.0, pos.z)
+	col.global_position = Vector3(pos.x, pos.y + 9.0, pos.z)
 	world_root.add_child(col)
-	gravity_lifts.append({"pos": Vector3(pos.x, 0, pos.z), "expire": float(Time.get_ticks_msec()) * 0.001 + 10.0, "node": col})
+	gravity_lifts.append({"pos": pos, "expire": float(Time.get_ticks_msec()) * 0.001 + 10.0, "node": col})
 
 func _spawn_black_hole(pos: Vector3) -> void:
 	var hole := MeshInstance3D.new()
@@ -594,7 +678,7 @@ func _spawn_arc_snare(pos: Vector3) -> void:
 	_spawn_smoke_sphere(pos, Color(0.1, 0.8, 0.98, 0.45), 6.5, 4.5)
 	for bot in enemies:
 		if is_instance_valid(bot) and bot.hp > 0.0 and bot.global_position.distance_to(pos) <= 11.0:
-			bot.apply_damage(25, false, "艾许电弧陷阱")
+			bot.apply_damage(25, false, "电弧陷阱")
 			bot.set_scanned(4.5)
 
 func _spawn_missile_swarm(pos: Vector3) -> void:
@@ -603,7 +687,7 @@ func _spawn_missile_swarm(pos: Vector3) -> void:
 		_spawn_smoke_sphere(pos + offset, Color(1.0, 0.45, 0.1, 0.55), 3.5, 1.5)
 	for bot in enemies:
 		if is_instance_valid(bot) and bot.hp > 0.0 and bot.global_position.distance_to(pos) <= 13.0:
-			bot.apply_damage(40, false, "瓦尔基里导弹群")
+			bot.apply_damage(40, false, "集群飞弹/集束炸弹")
 
 func _spawn_artillery_barrage(pos: Vector3) -> void:
 	for i in range(8):
@@ -618,7 +702,9 @@ func _spawn_mirage_decoy(pos: Vector3, dir: Vector3) -> void:
 	var decoy := LegendRigBuilder.create_legend_rig(leg)
 	decoy.global_position = pos
 	world_root.add_child(decoy)
+	var dest: Vector3 = _raycast_clamp_position(pos + Vector3(0, 1.0, 0), pos + Vector3(dir.x, 0, dir.z).normalized() * 18.0 + Vector3(0, 1.0, 0), 1.0)
+	dest.y = pos.y
 	var tw := create_tween()
-	tw.tween_property(decoy, "global_position", pos + Vector3(dir.x, 0, dir.z).normalized() * 18.0, 3.5)
+	tw.tween_property(decoy, "global_position", dest, 3.5)
 	tw.tween_interval(4.0)
 	tw.tween_callback(decoy.queue_free)

@@ -1,9 +1,12 @@
 class_name PlayerController
 extends CharacterBody3D
-## Authentic Apex Legends First-Person Movement, Camera Look & Physics Controller for Godot 4.3.
-## Fixes mouse control via _input() handling, click-to-capture, right-click drag fallback, and arrow-key backup.
-## Supports Sprint, Momentum Slide, Wall Mantle/Climb, Wall-Bounce, Jump Pad Double-Jump,
-## Pathfinder 3D Grappling Hook, Zipline Riding, Valkyrie VTOL Jets, and Gibraltar 3D Gun Shield.
+## Authentic Apex Legends First-Person & Third-Person Movement, Camera & Physics Controller for Godot 4.3.
+## Features:
+## - True Physics Capsule Collision (no wall-phasing during Zipline, Grapple, Skydive, or Slide)
+## - Viewmodel Wall-Proximity Pullback Raycast (eliminates 1st-person gun clipping into walls)
+## - 3rd-Person Camera Spring-Arm Collision Raycast (eliminates 3rd-person camera clipping into walls)
+## - Authentic Weapon Category ADS Strafe Speeds & Consumable Healing Movement Slowdown
+## - Realistic Footstep Cadence Audio & Live Player Behavior Recording Hook (BehaviorRecorder)
 
 @export var base_speed: float = 9.5
 @export var sprint_speed: float = 14.2
@@ -20,6 +23,8 @@ var weapon_ctrl: Node = null
 var player_body_rig: Node3D = null
 var is_third_person: bool = false
 var target_cam_pos: Vector3 = Vector3(0, 1.68, 0)
+var vm_wall_pullback: float = 0.0
+var step_sound_accum: float = 0.0
 
 var yaw: float = 0.0
 var pitch: float = 0.0
@@ -131,11 +136,12 @@ func _update_body_perspective() -> void:
 	var wep_mesh: Node3D = player_body_rig.find_child("HeldWeaponRoot", true, false)
 	if is_third_person:
 		player_body_rig.visible = true
-		if head_node: head_node.visible = true
-		if wep_mesh: wep_mesh.visible = (PlayerState.active_slot != 2)
+		if head_node:
+			head_node.visible = true
+		if wep_mesh:
+			wep_mesh.visible = (PlayerState.active_slot != 2 and PlayerState.heal_cast_timer <= 0.0)
 		viewmodel_holder.visible = false
 	else:
-		# In first person, completely hide the 3rd person body rig so it never obstructs the camera!
 		player_body_rig.visible = false
 		viewmodel_holder.visible = true
 
@@ -175,13 +181,13 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			is_ads = mb.pressed
+			is_ads = mb.pressed and PlayerState.heal_cast_timer <= 0.0
 		if mb.pressed and (mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT):
-			if mb.position.x < 1320 or mb.position.y > 90: # Avoid top-right menu button area
+			if mb.position.x < 1320 or mb.position.y > 90:
 				if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
 					Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
-	# Smooth 360 Mouse Look (works in MOUSE_MODE_CAPTURED or while holding Left/Right mouse button)
+	# Smooth 360 Mouse Look
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
 		var can_look: bool = (Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
@@ -191,7 +197,9 @@ func _input(event: InputEvent) -> void:
 			pitch = clampf(pitch - mm.relative.y * sens, -1.42, 1.42)
 
 func _physics_process(delta: float) -> void:
-	# Backup keyboard arrow look so camera is always controllable even without mouse lock
+	if PlayerState.heal_cast_timer > 0.0:
+		is_ads = false
+
 	if not PlayerState.ui_modal_open:
 		var key_turn: float = 2.1 * delta
 		if Input.is_key_pressed(KEY_LEFT):
@@ -203,7 +211,6 @@ func _physics_process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_DOWN):
 			pitch = clampf(pitch - key_turn * 0.8, -1.42, 1.42)
 
-	# Smoothly decay recoil kick
 	recoil_pitch = lerpf(recoil_pitch, 0.0, delta * 10.0)
 	recoil_yaw = lerpf(recoil_yaw, 0.0, delta * 10.0)
 	cam_shake = lerpf(cam_shake, 0.0, delta * 16.0)
@@ -215,7 +222,7 @@ func _physics_process(delta: float) -> void:
 	# Gibraltar Gun Shield visibility
 	gun_shield_mesh.visible = (PlayerState.selected_legend_id == "gibraltar" and is_ads and PlayerState.active_slot != 2 and PlayerState.gun_shield_hp > 0.0)
 
-	# Target FOV for ADS / Sprint / Stim
+	# Target FOV for ADS / Sprint / Stim / Bow Draw
 	var target_fov: float = 78.0
 	if is_ads and PlayerState.active_slot != 2:
 		var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
@@ -224,6 +231,9 @@ func _physics_process(delta: float) -> void:
 	elif PlayerState.stim_timer > 0.0 or PlayerState.beast_timer > 0.0 or is_sliding:
 		target_fov = 92.0
 	camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
+
+	# Viewmodel Wall-Proximity Pullback (Prevents 1st-Person Weapon Clipping Into Walls!)
+	_update_viewmodel_wall_avoidance(delta)
 
 	if in_dropship:
 		global_position += Vector3(22.0, 0.0, 18.0) * delta
@@ -240,30 +250,31 @@ func _physics_process(delta: float) -> void:
 			AudioSynthesizer.play_ability("jumppad")
 		return
 
-	# Zipline Riding
+	# Zipline Riding (Physics-safe velocity motion with wall-stop protection!)
 	if zipline_active:
 		var total_len: float = maxf(1.0, zipline_start.distance_to(zipline_end))
-		zipline_t += (30.0 / total_len) * delta
-		global_position = zipline_start.lerp(zipline_end, clampf(zipline_t, 0.0, 1.0)) + Vector3(0, -1.2, 0)
-		if zipline_t >= 1.0 or Input.is_key_pressed(KEY_SPACE):
+		zipline_t += (28.0 / total_len) * delta
+		var desired_pos: Vector3 = zipline_start.lerp(zipline_end, clampf(zipline_t, 0.0, 1.0)) + Vector3(0, -1.2, 0)
+		velocity = (desired_pos - global_position) / maxf(delta, 0.001)
+		move_and_slide()
+		if zipline_t >= 1.0 or Input.is_key_pressed(KEY_SPACE) or is_on_wall():
 			zipline_active = false
-			velocity = (zipline_end - zipline_start).normalized() * 16.0 + Vector3(0, 10.5, 0)
+			velocity = (zipline_end - zipline_start).normalized() * 14.0 + Vector3(0, 9.5, 0)
 		return
 
-	# Pathfinder Grappling Hook Pendulum Pull
+	# Pathfinder Grappling Hook Pendulum Pull (Physics-safe with wall collision termination)
 	if grapple_active:
 		grapple_timer -= delta
 		var hand_pos: Vector3 = global_position + Vector3(0, 1.35, 0)
 		var to_target: Vector3 = grapple_point - hand_pos
 		var dist: float = to_target.length()
-		if dist < 2.2 or grapple_timer <= 0.0 or Input.is_key_pressed(KEY_C):
+		if dist < 2.2 or grapple_timer <= 0.0 or Input.is_key_pressed(KEY_C) or (is_on_wall() and grapple_timer < 1.15):
 			grapple_active = false
 			grapple_beam.visible = false
 		else:
 			var pull_dir: Vector3 = to_target.normalized()
 			var look_fwd: Vector3 = -camera.global_transform.basis.z
-			velocity = (pull_dir * 26.0 + look_fwd * 10.0 + Vector3(0, 6.5, 0))
-			# Update 3D Grapple Rope transform
+			velocity = (pull_dir * 25.0 + look_fwd * 9.0 + Vector3(0, 5.5, 0))
 			var mid: Vector3 = (hand_pos + grapple_point) * 0.5
 			grapple_beam.global_position = mid
 			grapple_beam.scale = Vector3(1.0, dist, 1.0)
@@ -280,7 +291,8 @@ func _physics_process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_D): input_dir.x += 1.0
 	input_dir = input_dir.normalized()
 
-	var sprinting: bool = Input.is_key_pressed(KEY_SHIFT) and not is_ads
+	var is_healing: bool = (PlayerState.heal_cast_timer > 0.0)
+	var sprinting: bool = Input.is_key_pressed(KEY_SHIFT) and not is_ads and not is_healing
 	var crouching: bool = Input.is_key_pressed(KEY_C) or Input.is_key_pressed(KEY_CTRL)
 
 	if crouching and sprinting and is_on_floor() and not is_sliding and input_dir.length() > 0.1:
@@ -304,9 +316,15 @@ func _physics_process(delta: float) -> void:
 		spd = 6.2
 
 	if PlayerState.stim_timer > 0.0 or PlayerState.void_timer > 0.0 or PlayerState.beast_timer > 0.0 or PlayerState.double_time_timer > 0.0:
-		spd *= 1.35
-	if is_ads:
-		spd *= 0.72
+		spd *= 1.32
+
+	# Authentic Consumable Healing Walk Penalty (except while sliding)
+	if is_healing and not is_sliding:
+		spd = minf(spd, base_speed * 0.56)
+	elif is_ads and PlayerState.active_slot != 2:
+		var slot_ads: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+		var wep_ads: Dictionary = GameData.get_weapon_by_id(slot_ads.get("weapon_id", "r301"))
+		spd *= float(wep_ads.get("ads_move_scale", 0.72))
 
 	var move_vec: Vector3 = (global_transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 	if move_vec.length() > 0.01:
@@ -314,15 +332,23 @@ func _physics_process(delta: float) -> void:
 		velocity.x = lerpf(velocity.x, move_vec.x * spd, delta * accel)
 		velocity.z = lerpf(velocity.z, move_vec.z * spd, delta * accel)
 		bob_time += delta * (13.5 if sprinting else 9.0)
+
+		# Play realistic synthesized footsteps on floor
+		if is_on_floor() and not is_sliding:
+			step_sound_accum += delta * (3.1 if sprinting else 2.1)
+			if step_sound_accum >= 1.0:
+				step_sound_accum = 0.0
+				AudioSynthesizer.play_footstep(sprinting)
 	else:
 		velocity.x = move_toward(velocity.x, 0.0, spd * 6.0 * delta)
 		velocity.z = move_toward(velocity.z, 0.0, spd * 6.0 * delta)
+		step_sound_accum = 0.0
 
 	# Gravity, Wall-Climb, Lifeline Glide & Valkyrie VTOL
 	if not is_on_floor():
 		var grav_mult: float = 1.0
 		if PlayerState.selected_legend_id == "lifeline" and Input.is_key_pressed(KEY_SPACE) and velocity.y < 0.0:
-			grav_mult = 0.25 # D.O.C. Drone Slow Glide
+			grav_mult = 0.25
 		velocity.y -= gravity * grav_mult * delta
 		if is_on_wall() and Input.is_key_pressed(KEY_W) and velocity.y < 4.5:
 			velocity.y = 7.8
@@ -347,8 +373,11 @@ func _physics_process(delta: float) -> void:
 			velocity.y = lerpf(velocity.y, 8.8, delta * 8.0)
 			PlayerState.vtol_fuel = maxf(0.0, PlayerState.vtol_fuel - 28.0 * delta)
 
+	# Camera Positioning with 3rd-Person Spring-Arm Collision Check
 	if is_third_person:
-		target_cam_pos = Vector3(0.55, 1.25 if (is_sliding or crouching) else 1.85, 2.2)
+		var eye_h: float = 1.25 if (is_sliding or crouching) else 1.82
+		var desired_local := Vector3(0.55, eye_h, 2.25)
+		target_cam_pos = _compute_spring_arm_cam_pos(Vector3(0, eye_h * 0.88, 0), desired_local)
 	else:
 		target_cam_pos = Vector3(0, 1.02 if (is_sliding or crouching) else 1.68, 0)
 	camera.position = camera.position.lerp(target_cam_pos, delta * 14.0)
@@ -356,8 +385,15 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	# Drive procedural 3D character body rig animations only when in 3rd-person mode
+	# Record Player Behavior Trajectory for AI Imitation Learning (when recording is active)
+	var enemies_arr: Array = []
+	if weapon_ctrl != null and "enemies" in weapon_ctrl:
+		enemies_arr = weapon_ctrl.enemies
+	BehaviorRecorder.record_step(delta, self, enemies_arr)
+
+	# Drive procedural 3D character body rig animations in 3rd-person mode
 	if player_body_rig != null and is_third_person:
+		_update_body_perspective()
 		var firing: bool = false
 		var reloading: bool = false
 		if weapon_ctrl != null:
@@ -372,7 +408,8 @@ func _physics_process(delta: float) -> void:
 			"is_in_air": is_air,
 			"is_ziplining": zipline_active,
 			"is_grappling": grapple_active,
-			"is_healing": PlayerState.heal_cast_timer > 0.0,
+			"is_healing": is_healing,
+			"heal_id": PlayerState.active_heal_id,
 			"is_heirloom": (PlayerState.active_slot == 2),
 			"is_reloading": reloading,
 			"is_firing": firing,
@@ -381,3 +418,34 @@ func _physics_process(delta: float) -> void:
 			"speed": velocity.length(),
 			"time": Time.get_ticks_msec() / 1000.0
 		})
+
+
+func _update_viewmodel_wall_avoidance(delta: float) -> void:
+	## Casts a short ray forward from camera to pull back the 1st-person weapon when close to a wall.
+	var target_pull: float = 0.0
+	if not is_third_person and get_world_3d() != null and get_world_3d().direct_space_state != null:
+		var origin: Vector3 = camera.global_position
+		var fwd: Vector3 = -camera.global_transform.basis.z
+		var q := PhysicsRayQueryParameters3D.create(origin, origin + fwd * 1.05, 1)
+		var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+		if not hit.is_empty():
+			var d: float = origin.distance_to(hit["position"])
+			if d < 1.05:
+				target_pull = (1.05 - d) * 0.42
+	vm_wall_pullback = lerpf(vm_wall_pullback, target_pull, delta * 18.0)
+	viewmodel_holder.position.z = vm_wall_pullback
+
+
+func _compute_spring_arm_cam_pos(pivot_local: Vector3, desired_local: Vector3) -> Vector3:
+	## Prevents 3rd-person camera from clipping through walls behind the player.
+	if get_world_3d() == null or get_world_3d().direct_space_state == null:
+		return desired_local
+	var from_w: Vector3 = to_global(pivot_local)
+	var to_w: Vector3 = to_global(desired_local)
+	var q := PhysicsRayQueryParameters3D.create(from_w, to_w, 1)
+	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
+	if not hit.is_empty():
+		var hit_w: Vector3 = hit["position"]
+		var safe_w: Vector3 = from_w.lerp(hit_w, 0.82)
+		return to_local(safe_w)
+	return desired_local

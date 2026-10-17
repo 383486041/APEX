@@ -1,9 +1,12 @@
 class_name CanyonWorldBuilder
 extends RefCounted
-## Procedurally constructs the 640x640m "New Dawn Canyon" 3D map with:
-## - High-Detail Multi-Part Supply Bins (matching reference image_55d43f.png: ribbed octagonal base, yellow hazard bumpers, hydraulic struts, glowing LED rim, clam-shell animated lid, and visible 3D interior loot items)
-## - 3-Legged Apex Pack / Loot Tick Robots (matching reference image_55d4db.jpg: pyramidal armored body, red/white/gold plates, central glowing optical eye, 3 articulated mechanical legs)
-## - Detailed Industrial Cargo Crates, Shipping Containers, Canyon Rock Formations, and Multi-Story POI Buildings with Ramps & Rooftop Parapets.
+## Procedurally constructs the 640x640m "New Dawn Canyon" 3D map for Godot 4.3 with:
+## - High-Detail Multi-Part Supply Bins (with StaticBody3D collision so players/bots never clip through bins,
+##   and an interior tray ready to spawn interactive 3D pickupable loot items when opened)
+## - 3-Legged Apex Pack / Loot Tick Robots (with StaticBody3D collision)
+## - 28-Weapon Armory Racks in Firing Range (covering all 7 authentic weapon classes: AR, SMG, LMG, MARKSMAN, SNIPER, SHOTGUN, PISTOL)
+## - Interactive Jump Towers / Redeploy Ziplines at POIs for Battle Royale rotation
+## - Multi-Story POI Buildings with flush doorways, rooftop parapets, and walkable exterior ramps.
 
 static func _make_mat(col: Color, metal: float = 0.65, rough: float = 0.35, emit: bool = false, emit_e: float = 2.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -45,10 +48,19 @@ static func _add_cyl(parent: Node3D, rt: float, rb: float, h: float, pos: Vector
 	parent.add_child(mi)
 	return mi
 
-## Builds an authentic Apex Supply Bin (image_55d43f.png) with LidPivot & visible interior loot
+## Builds an authentic Apex Supply Bin with StaticBody3D physics collision & LidPivot
 static func create_supply_bin_node(bin_type: String = "normal") -> Node3D:
-	var root := Node3D.new()
+	var root := StaticBody3D.new()
 	root.name = "ApexSupplyBin"
+	root.collision_layer = 1
+	root.collision_mask = 0
+
+	var col := CollisionShape3D.new()
+	var bshape := BoxShape3D.new()
+	bshape.size = Vector3(2.76, 1.08, 1.46)
+	col.shape = bshape
+	col.position = Vector3(0, 0.54, 0)
+	root.add_child(col)
 
 	var lid_col := Color("#cbd5e1")
 	var led_col := Color("#2dd4bf")
@@ -76,17 +88,9 @@ static func create_supply_bin_node(bin_type: String = "normal") -> Node3D:
 		_add_box(root, Vector3(0.16, 0.36, 1.46), Vector3(sx * 1.36, 0.50, 0), mat_hazard)
 		_add_cyl(root, 0.08, 0.08, 0.65, Vector3(sx * 1.38, 0.68, -0.55), mat_rib, Vector3(0.35, 0, 0), 8, "HydraulicStrut")
 
-	# Glowing Cyan/Red LED Seam Strip & Interior Loot Tray
+	# Glowing Cyan/Red LED Seam Strip & Interior Loot Tray (Interactive 3D items spawn on this tray when opened!)
 	_add_box(root, Vector3(2.68, 0.05, 1.44), Vector3(0, 0.69, 0), mat_led, Vector3.ZERO, "LedRim")
-	_add_box(root, Vector3(2.48, 0.06, 1.22), Vector3(0, 0.66, 0), mat_rib, Vector3.ZERO, "InteriorTray")
-
-	# Visible 3D Interior Loot Items (Shield Batteries, Ammo Boxes, Weapon Core)
-	var mat_bat := _make_mat(Color("#38bdf8"), 0.5, 0.2, true, 2.2)
-	var mat_purp := _make_mat(Color("#a855f7"), 0.5, 0.2, true, 2.4)
-	_add_cyl(root, 0.11, 0.11, 0.32, Vector3(-0.75, 0.82, 0.12), mat_bat, Vector3.ZERO, 8)
-	_add_cyl(root, 0.11, 0.11, 0.32, Vector3(-0.42, 0.82, -0.10), mat_bat, Vector3.ZERO, 8)
-	_add_box(root, Vector3(0.58, 0.14, 0.24), Vector3(0.18, 0.76, 0.05), mat_purp)
-	_add_box(root, Vector3(0.32, 0.18, 0.28), Vector3(0.82, 0.78, -0.08), mat_hazard)
+	_add_box(root, Vector3(2.54, 0.06, 1.26), Vector3(0, 0.68, 0), mat_rib, Vector3.ZERO, "InteriorTray")
 
 	# 2. Articulated Clam-Shell Upper Lid (LidPivot at rear hinge so it swings open smoothly!)
 	var lid_pivot := Node3D.new()
@@ -98,15 +102,24 @@ static func create_supply_bin_node(bin_type: String = "normal") -> Node3D:
 	_add_box(lid_pivot, Vector3(2.56, 0.18, 1.12), Vector3(0, 0.46, 0.68), mat_base, Vector3.ZERO, "LidTopArch")
 	for p in [-1, 0, 1]:
 		_add_box(lid_pivot, Vector3(0.68, 0.10, 0.92), Vector3(float(p) * 0.82, 0.52, 0.68), mat_lid)
-	# Front Latch Lock
 	_add_box(lid_pivot, Vector3(0.38, 0.18, 0.08), Vector3(0, 0.12, 1.40), mat_led, Vector3.ZERO, "FrontLatch")
 
 	return root
 
-## Builds an authentic 3-Legged Apex Pack / Loot Tick Robot (image_55d4db.jpg)
+## Builds an authentic 3-Legged Apex Pack / Loot Tick Robot
 static func create_loot_tick_node(tier_rarity: int = 4) -> Node3D:
-	var root := Node3D.new()
+	var root := StaticBody3D.new()
 	root.name = "ApexLootTick"
+	root.collision_layer = 1
+	root.collision_mask = 0
+
+	var col := CollisionShape3D.new()
+	var cshape := CylinderShape3D.new()
+	cshape.radius = 0.55
+	cshape.height = 1.05
+	col.shape = cshape
+	col.position = Vector3(0, 0.525, 0)
+	root.add_child(col)
 
 	var glow_col := Color("#f59e0b") if tier_rarity == 4 else (Color("#ff1e42") if tier_rarity >= 5 else Color("#a855f7"))
 	var mat_shell := _make_mat(Color("#f8fafc"), 0.65, 0.25)
@@ -120,16 +133,13 @@ static func create_loot_tick_node(tier_rarity: int = 4) -> Node3D:
 	body_pivot.position = Vector3(0, 0.58, 0)
 	root.add_child(body_pivot)
 
-	# Pyramidal 3-Sided Robotic Pod Core
 	_add_cyl(body_pivot, 0.18, 0.46, 0.56, Vector3(0, 0.06, 0), mat_shell, Vector3.ZERO, 3, "PyramidCore")
 	_add_cyl(body_pivot, 0.22, 0.48, 0.22, Vector3(0, -0.08, 0), mat_red, Vector3.ZERO, 3, "RedArmorBand")
 	_add_cyl(body_pivot, 0.14, 0.14, 0.08, Vector3(0, 0.36, 0), mat_dark, Vector3.ZERO, 6, "TopCap")
 
-	# Central Glowing Eye Lens on Front Face
 	_add_cyl(body_pivot, 0.12, 0.12, 0.10, Vector3(0, 0.04, 0.24), mat_dark, Vector3(PI * 0.5, 0, 0), 12)
 	_add_cyl(body_pivot, 0.085, 0.085, 0.12, Vector3(0, 0.04, 0.25), mat_glow, Vector3(PI * 0.5, 0, 0), 12, "GlowingEye")
 
-	# 3 Articulated Mechanical Legs spaced at 120 degrees
 	for i in range(3):
 		var ang: float = float(i) * (TAU / 3.0) + PI * 0.33
 		var leg_root := Node3D.new()
@@ -146,6 +156,8 @@ static func create_loot_tick_node(tier_rarity: int = 4) -> Node3D:
 ## Builds an Industrial Sci-Fi Cargo Crate / Cover Box
 static func create_cargo_crate_node(w: float = 2.2, h: float = 1.6, d: float = 1.8, accent_col: Color = Color("#f59e0b")) -> StaticBody3D:
 	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(w, h, d)
@@ -168,12 +180,49 @@ static func create_cargo_crate_node(w: float = 2.2, h: float = 1.6, d: float = 1
 
 	return body
 
+## Builds an Interactive Jump Tower / Redeploy Balloon
+static func create_jump_tower_node() -> StaticBody3D:
+	var tower := StaticBody3D.new()
+	tower.name = "ApexJumpTower"
+	tower.collision_layer = 1
+	tower.collision_mask = 0
+
+	var col := CollisionShape3D.new()
+	var cshape := CylinderShape3D.new()
+	cshape.radius = 0.65
+	cshape.height = 28.0
+	col.shape = cshape
+	col.position = Vector3(0, 14.0, 0)
+	tower.add_child(col)
+
+	var mat_pole := _make_mat(Color("#334155"), 0.82, 0.28)
+	var mat_balloon := _make_mat(Color("#dc2626"), 0.25, 0.45, true, 1.6)
+	var mat_cable := _make_mat(Color("#facc15"), 0.85, 0.20, true, 2.2)
+
+	_add_cyl(tower, 0.45, 0.85, 2.2, Vector3(0, 1.1, 0), mat_pole, Vector3.ZERO, 8)
+	_add_cyl(tower, 0.22, 0.28, 28.0, Vector3(0, 14.0, 0), mat_pole, Vector3.ZERO, 10)
+	_add_cyl(tower, 0.035, 0.035, 27.0, Vector3(0, 13.5, 0.45), mat_cable, Vector3.ZERO, 8)
+	_add_cyl(tower, 3.2, 1.8, 5.5, Vector3(0, 30.5, 0), mat_balloon, Vector3.ZERO, 14, "RedeployBalloon")
+
+	var lbl := Label3D.new()
+	lbl.text = "[E] 搭乘跳伞塔高空重部署"
+	lbl.font_size = 24
+	lbl.pixel_size = 0.0045
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.modulate = Color("#facc15")
+	lbl.position = Vector3(0, 2.4, 0.6)
+	tower.add_child(lbl)
+
+	return tower
+
 static func build_canyon_world(parent: Node3D) -> Dictionary:
 	var interactables: Array = []
 
 	# Terrain Floor + StaticBody3D
 	var floor_body := StaticBody3D.new()
 	floor_body.name = "CanyonTerrain"
+	floor_body.collision_layer = 1
+	floor_body.collision_mask = 0
 	var terrain_col := CollisionShape3D.new()
 	var box_shape := BoxShape3D.new()
 	box_shape.size = Vector3(640, 1.0, 640)
@@ -196,59 +245,67 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 	var mat_roof := _make_mat(Color("#1e293b"), 0.55, 0.40)
 	var mat_rock := _make_mat(Color("#3b312b"), 0.12, 0.88)
 
-	# 1. Spawn Firing Range 22-Weapon Armory Racks + Supply Bins + Loot Ticks right near spawn (0, 0, -10)
+	# 1. Spawn Firing Range 28-Weapon Armory Racks (2 rows of 14 stands) + Supply Bins + Loot Ticks near spawn
 	var rack_mat := _make_mat(Color("#0f172a"), 0.78, 0.28)
+	var cols_per_row: int = 14
 	for i in range(GameData.WEAPONS.size()):
 		var w: Dictionary = GameData.WEAPONS[i]
-		var rx: float = (float(i % 11) - 5.0) * 3.2
-		var rz: float = -10.0 - float(i / 11) * 4.8
-		var stand := MeshInstance3D.new()
-		var sbox := BoxMesh.new()
-		sbox.size = Vector3(2.2, 1.05, 0.9)
-		stand.mesh = sbox
-		stand.material_override = rack_mat
-		stand.position = Vector3(rx, 0.525, rz)
+		var rx: float = (float(i % cols_per_row) - 6.5) * 2.85
+		var rz: float = -10.5 - float(i / cols_per_row) * 4.6
+		var stand := StaticBody3D.new()
+		stand.collision_layer = 1
+		stand.collision_mask = 0
+		var st_col := CollisionShape3D.new()
+		var st_shape := BoxShape3D.new()
+		st_shape.size = Vector3(2.1, 1.05, 0.88)
+		st_col.shape = st_shape
+		st_col.position = Vector3(0, 0.525, 0)
+		stand.add_child(st_col)
+		_add_box(stand, Vector3(2.1, 1.05, 0.88), Vector3(0, 0.525, 0), rack_mat)
+		stand.position = Vector3(rx, 0.0, rz)
 		parent.add_child(stand)
 
 		var gun_preview := WeaponMeshBuilder.create_viewmodel(w, false, {}, "2x_bruiser")
-		gun_preview.position = Vector3(0, 0.82, 0)
+		gun_preview.position = Vector3(0, 1.34, 0)
 		gun_preview.rotation = Vector3(0, PI * 0.5, 0)
-		gun_preview.scale = Vector3(1.15, 1.15, 1.15)
+		gun_preview.scale = Vector3(1.12, 1.12, 1.12)
 		var l_arm := gun_preview.get_node_or_null("GunRig/LeftArmPivot")
 		var r_arm := gun_preview.get_node_or_null("GunRig/RightArmPivot")
-		if l_arm: l_arm.visible = false
-		if r_arm: r_arm.visible = false
+		if l_arm:
+			l_arm.visible = false
+		if r_arm:
+			r_arm.visible = false
 		stand.add_child(gun_preview)
 
 		var lbl := Label3D.new()
-		lbl.text = "[E] %s" % str(w["name"])
-		lbl.font_size = 22
-		lbl.pixel_size = 0.0038
+		lbl.text = "[E] [%s] %s" % [str(w["cat"]), str(w["name"])]
+		lbl.font_size = 20
+		lbl.pixel_size = 0.0036
 		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		lbl.modulate = w.get("accent", Color("#f97316"))
-		lbl.position = Vector3(0, 1.25, 0)
+		lbl.position = Vector3(0, 1.78, 0)
 		stand.add_child(lbl)
 
 		interactables.append({
 			"type": "weapon_rack",
 			"weapon_id": str(w["id"]),
 			"name": "装备 【%s】" % str(w["name"]),
-			"pos": stand.position,
+			"pos": stand.position + Vector3(0, 0.8, 0),
 			"node": stand
 		})
 
-	# Spawn 3 High-Detail Supply Bins & 2 Loot Ticks right beside spawn so player can inspect & open them immediately!
+	# Spawn 3 High-Detail Supply Bins & 2 Loot Ticks right beside spawn so player can open & pick up individual items!
 	var spawn_bin_types := ["normal", "assault", "support"]
 	for sb in range(3):
 		var btype: String = spawn_bin_types[sb]
 		var bin_node := create_supply_bin_node(btype)
-		bin_node.position = Vector3(-11.0 + float(sb) * 4.2, 0.0, -4.5)
+		bin_node.position = Vector3(-11.5 + float(sb) * 4.4, 0.0, -4.5)
 		parent.add_child(bin_node)
 		var bname: String = "红色突击武器补给仓" if btype == "assault" else ("蓝色支援医疗补给仓" if btype == "support" else "外域标准补给仓")
 		interactables.append({
 			"type": "supply_bin",
 			"bin_type": btype,
-			"name": "开启 %s (大电/满甲/+100 EVO)" % bname,
+			"name": "开启 %s (生成可拾取3D枪械/电池/医疗品)" % bname,
 			"pos": bin_node.position,
 			"node": bin_node,
 			"opened": false
@@ -256,25 +313,37 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 
 	for lt in range(2):
 		var tick_node := create_loot_tick_node(5 if lt == 0 else 4)
-		tick_node.position = Vector3(6.5 + float(lt) * 3.2, 0.0, -4.5)
+		tick_node.position = Vector3(6.5 + float(lt) * 3.4, 0.0, -4.5)
 		parent.add_child(tick_node)
 		interactables.append({
 			"type": "loot_tick",
 			"rarity": 5 if lt == 0 else 4,
-			"name": "开启 💎 战利品箱机器人 (必爆红甲/传家宝碎片/空投金枪)",
+			"name": "开启 💎 战利品箱机器人 (爆出可拾取红甲/金枪/大电)",
 			"pos": tick_node.position,
 			"node": tick_node,
 			"opened": false
 		})
 
+	# Spawn a Jump Tower near spawn for instant skyward redeploy testing
+	var spawn_tower := create_jump_tower_node()
+	spawn_tower.position = Vector3(15.5, 0.0, -5.5)
+	parent.add_child(spawn_tower)
+	interactables.append({
+		"type": "jump_tower",
+		"name": "搭乘跳伞塔高空滑翔重部署",
+		"pos": spawn_tower.position,
+		"node": spawn_tower
+	})
+
 	# Spawn tactical cover crates in the firing range duel zone
 	for c_idx in range(6):
 		var cr := create_cargo_crate_node(2.4, 1.55, 1.6, Color("#38bdf8") if c_idx % 2 == 0 else Color("#f97316"))
-		cr.position = Vector3((float(c_idx) - 2.5) * 6.2, 0.0, -18.5)
+		cr.position = Vector3((float(c_idx) - 2.5) * 6.2, 0.0, -19.5)
 		parent.add_child(cr)
 
-	# 2. Build 12 Named POIs across the Canyon with Buildings, Rooftop Parapets, Ramps, Supply Bins, Loot Ticks & Cargo Crates
-	for poi in GameData.MAP_POIS:
+	# 2. Build 12 Named POIs across the Canyon with Buildings, Rooftop Parapets, Ramps, Supply Bins, Loot Ticks & Jump Towers
+	for poi_i in range(GameData.MAP_POIS.size()):
+		var poi: Dictionary = GameData.MAP_POIS[poi_i]
 		var p_pos: Vector2 = poi["pos"]
 		var b_count: int = int(poi["buildings"])
 		var accent_mat := _make_mat(poi["color"], 0.4, 0.2, true, 1.8)
@@ -292,7 +361,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			b_root.position = Vector3(bx, 0.0, bz)
 			parent.add_child(b_root)
 
-			# 1. Solid Ground Floor with Collision (Embedded flush with terrain y=0 so doorways have zero step/snagging!)
+			# 1. Solid Ground Floor with Collision
 			var floor_sb := StaticBody3D.new()
 			var floor_col := CollisionShape3D.new()
 			var floor_shape := BoxShape3D.new()
@@ -315,9 +384,9 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(roof_sb, Vector3(bw + 0.6, 0.25, bd + 0.6), Vector3(0, bh, 0), accent_mat)
 			b_root.add_child(roof_sb)
 
-			# 3. Rooftop Parapets (Waist-height cover walls on roof with real collision & ramp doorway opening!)
+			# 3. Rooftop Parapets
 			for p_side in [0, 1, 2, 3]:
-				if p_side == 0: # North Parapet
+				if p_side == 0:
 					var p_sz := Vector3(bw, 1.05, 0.35)
 					var pw_pos := Vector3(0, bh + 0.35 + 0.525, -bd * 0.5)
 					var sb := StaticBody3D.new()
@@ -329,7 +398,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 					sb.add_child(col_north)
 					_add_box(sb, p_sz, pw_pos, mat_roof)
 					b_root.add_child(sb)
-				elif p_side == 1: # South Parapet
+				elif p_side == 1:
 					var p_sz := Vector3(bw, 1.05, 0.35)
 					var pw_pos := Vector3(0, bh + 0.35 + 0.525, bd * 0.5)
 					var sb := StaticBody3D.new()
@@ -341,7 +410,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 					sb.add_child(col_south)
 					_add_box(sb, p_sz, pw_pos, mat_roof)
 					b_root.add_child(sb)
-				elif p_side == 2: # West Parapet
+				elif p_side == 2:
 					var p_sz := Vector3(0.35, 1.05, bd)
 					var pw_pos := Vector3(-bw * 0.5, bh + 0.35 + 0.525, 0)
 					var sb := StaticBody3D.new()
@@ -353,7 +422,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 					sb.add_child(col_west)
 					_add_box(sb, p_sz, pw_pos, mat_roof)
 					b_root.add_child(sb)
-				else: # East Parapet: Split with 2.6m doorway for ramp rooftop entrance!
+				else:
 					var n_len: float = maxf(0.5, bd * 0.5 - 6.3)
 					if n_len > 0.5:
 						var n_sz := Vector3(0.35, 1.05, n_len)
@@ -380,8 +449,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 					_add_box(sb_s, s_sz, s_pos, mat_roof)
 					b_root.add_child(sb_s)
 
-			# 4. 4 Exterior Walls with 3.4m Walk-Through Doorways (Zero Clipping!)
-			# West Wall (Solid)
+			# 4. 4 Exterior Walls with 3.4m Walk-Through Doorways
 			var w_wall_sb := StaticBody3D.new()
 			var w_col := CollisionShape3D.new()
 			var w_shape := BoxShape3D.new()
@@ -392,7 +460,6 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(w_wall_sb, Vector3(0.4, bh, bd), Vector3(-bw * 0.5 + 0.2, bh * 0.5, 0), mat_wall)
 			b_root.add_child(w_wall_sb)
 
-			# East Wall (Solid)
 			var e_wall_sb := StaticBody3D.new()
 			var e_col := CollisionShape3D.new()
 			var e_shape := BoxShape3D.new()
@@ -403,7 +470,6 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(e_wall_sb, Vector3(0.4, bh, bd), Vector3(bw * 0.5 - 0.2, bh * 0.5, 0), mat_wall)
 			b_root.add_child(e_wall_sb)
 
-			# North Wall (Front with 3.4m Doorway)
 			var half_w: float = (bw - 3.4) * 0.5
 			for s in [-1.0, 1.0]:
 				var nw_sb := StaticBody3D.new()
@@ -417,7 +483,6 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 				_add_box(nw_sb, Vector3(half_w, bh, 0.4), nw_pos, mat_wall)
 				b_root.add_child(nw_sb)
 
-			# Door Header / Lintel
 			var lintel_sb := StaticBody3D.new()
 			var lintel_col := CollisionShape3D.new()
 			var lintel_shape := BoxShape3D.new()
@@ -429,7 +494,6 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(lintel_sb, Vector3(3.4, bh - 3.0, 0.4), lintel_pos, accent_mat)
 			b_root.add_child(lintel_sb)
 
-			# South Wall (Back with Doorway)
 			for s in [-1.0, 1.0]:
 				var sw_sb := StaticBody3D.new()
 				var sw_col := CollisionShape3D.new()
@@ -442,7 +506,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 				_add_box(sw_sb, Vector3(half_w, bh, 0.4), sw_pos, mat_wall)
 				b_root.add_child(sw_sb)
 
-			# 5. Exterior Walkable Rooftop Ramp + Solid Catwalk Landing (Walk from ground to roof with zero clipping!)
+			# 5. Exterior Walkable Rooftop Ramp + Solid Catwalk Landing
 			var ramp_sb := StaticBody3D.new()
 			var ramp_col := CollisionShape3D.new()
 			var ramp_shape := BoxShape3D.new()
@@ -456,7 +520,6 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(ramp_sb, Vector3(2.4, 0.25, ramp_len), ramp_col.position, mat_roof, ramp_col.rotation)
 			b_root.add_child(ramp_sb)
 
-			# Horizontal Rooftop Catwalk Landing Platform bridging ramp directly into the rooftop doorway
 			var land_sb := StaticBody3D.new()
 			var land_col := CollisionShape3D.new()
 			var land_shape := BoxShape3D.new()
@@ -467,12 +530,11 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			_add_box(land_sb, Vector3(2.4, 0.35, 2.6), land_col.position, mat_roof)
 			b_root.add_child(land_sb)
 
-			# Exterior Cargo Crates near each building
 			var crate := create_cargo_crate_node(2.2, 1.5, 1.6, poi["color"])
 			crate.position = Vector3(bx + bw * 0.65, 0.0, bz)
 			parent.add_child(crate)
 
-		# Canyon Rock Pillars around POI perimeter (With real CollisionShape3D!)
+		# Canyon Rock Pillars around POI perimeter
 		var rock_b := StaticBody3D.new()
 		rock_b.position = Vector3(p_pos.x - 22.0, 4.5, p_pos.y - 18.0)
 		var rock_col := CollisionShape3D.new()
@@ -493,7 +555,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			interactables.append({
 				"type": "supply_bin",
 				"bin_type": b_kind,
-				"name": "开启 %s 补给仓 (补满弹药/电池/EVO)" % str(poi["name"]),
+				"name": "开启 %s 补给仓 (生成可拾取物资)" % str(poi["name"]),
 				"pos": s_bin.position,
 				"node": s_bin,
 				"opened": false
@@ -511,6 +573,18 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			"node": poi_tick,
 			"opened": false
 		})
+
+		# 1 Jump Tower at every other POI
+		if poi_i % 2 == 0:
+			var jt := create_jump_tower_node()
+			jt.position = Vector3(p_pos.x + 14.0, 0.0, p_pos.y - 10.0)
+			parent.add_child(jt)
+			interactables.append({
+				"type": "jump_tower",
+				"name": "搭乘 %s 跳伞塔高空重部署" % str(poi["name"]),
+				"pos": jt.position,
+				"node": jt
+			})
 
 	# Shrinking Orange Energy Ring Cylinder
 	var ring_inst := MeshInstance3D.new()
