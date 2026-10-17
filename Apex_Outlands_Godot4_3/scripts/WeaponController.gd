@@ -165,10 +165,7 @@ func _process(delta: float) -> void:
 				var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 				var needed: int = int(slot["max_ammo"]) - int(slot["ammo"])
 				var ammo_key: String = str(wep["ammo"])
-				var avail: int = int(PlayerState.ammo_reserve.get(ammo_key, 999))
-				var loaded: int = mini(needed, avail) if PlayerState.selected_mode_id != "firing_range" else needed
-				if PlayerState.selected_mode_id != "firing_range":
-					PlayerState.ammo_reserve[ammo_key] = maxi(0, avail - loaded)
+				var loaded: int = PlayerState.deduct_ammo(ammo_key, needed)
 				slot["ammo"] = int(slot["ammo"]) + loaded
 				PlayerState.state_updated.emit()
 
@@ -179,15 +176,14 @@ func _complete_segmented_shell_insert() -> void:
 	var slot: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
 	var ammo_key: String = str(wep["ammo"])
-	var avail: int = int(PlayerState.ammo_reserve.get(ammo_key, 999))
-	if (avail > 0 or PlayerState.selected_mode_id == "firing_range") and int(slot["ammo"]) < int(slot["max_ammo"]):
-		slot["ammo"] = int(slot["ammo"]) + 1
-		if PlayerState.selected_mode_id != "firing_range":
-			PlayerState.ammo_reserve[ammo_key] = maxi(0, avail - 1)
-		PlayerState.state_updated.emit()
+	if int(slot["ammo"]) < int(slot["max_ammo"]):
+		var loaded: int = PlayerState.deduct_ammo(ammo_key, 1)
+		if loaded > 0:
+			slot["ammo"] = int(slot["ammo"]) + 1
+			PlayerState.state_updated.emit()
 
 	# Continue inserting next shell if still below max_ammo and reserves remain
-	var new_avail: int = int(PlayerState.ammo_reserve.get(ammo_key, 999))
+	var new_avail: int = int(PlayerState.ammo_reserve.get(ammo_key, 0))
 	if int(slot["ammo"]) < int(slot["max_ammo"]) and (new_avail > 0 or PlayerState.selected_mode_id == "firing_range"):
 		reload_total = 0.48 if str(wep["id"]) == "mastiff" else 0.42
 		reload_timer = reload_total
@@ -237,7 +233,7 @@ func _fire_bocek_arrow(draw_ratio: float) -> void:
 	if PlayerState.selected_mode_id != "firing_range":
 		var cur_arrows: int = int(PlayerState.ammo_reserve.get("arrows", 0))
 		if cur_arrows > 0:
-			PlayerState.ammo_reserve["arrows"] = cur_arrows - 1
+			PlayerState.deduct_ammo("arrows", 1)
 		elif int(slot["ammo"]) > 0:
 			slot["ammo"] = int(slot["ammo"]) - 1
 		else:
@@ -390,7 +386,7 @@ func _animate_viewmodel(delta: float) -> void:
 	var is_healing: bool = (PlayerState.heal_cast_timer > 0.0)
 
 	var sprinting: bool = Input.is_key_pressed(KEY_SHIFT) and not player.is_ads and reload_timer <= 0.0 and not is_drawing_bow and not is_healing
-	var base_pos := Vector3(0.24, -0.22, -0.46) if is_heirloom else (Vector3(0.22, -0.20, -0.48) if is_bow else Vector3(0.28, -0.24, -0.54))
+	var base_pos := Vector3(0.0, -0.16, -0.42) if is_healing else (Vector3(0.24, -0.22, -0.46) if is_heirloom else (Vector3(0.22, -0.20, -0.48) if is_bow else Vector3(0.28, -0.24, -0.54)))
 	var optic_node: Node3D = gun_rig.get_node_or_null("OpticPivot")
 	var cur_op: String = str(slot_cur.get("optic", "2x_bruiser"))
 
@@ -420,7 +416,7 @@ func _animate_viewmodel(delta: float) -> void:
 		ammo_housing.visible = not player.is_ads and not is_healing
 	var charm_node: Node3D = gun_rig.get_node_or_null("OmamoriCharm")
 	if charm_node:
-		charm_node.visible = not player.is_ads
+		charm_node.visible = not player.is_ads and not is_healing
 
 	# Locomotion Figure-8 Bobbing & Dynamic Rotational Sway
 	var bob_x: float = cos(player.bob_time * 0.5) * (0.014 if sprinting else 0.006)
@@ -456,12 +452,17 @@ func _animate_viewmodel(delta: float) -> void:
 	# =========================================================================
 	# 0. FIRST-PERSON CONSUMABLE ANIMATION (打药动作 & 使用电池动作)
 	# =========================================================================
-	if is_healing and cons_pivot != null:
-		cons_pivot.visible = true
+	if is_healing:
+		if cons_pivot != null:
+			cons_pivot.visible = true
+		for child in gun_rig.get_children():
+			if child.name != "ConsumablePivot" and child.name != "LeftArmPivot" and child.name != "RightArmPivot":
+				if child.visible:
+					child.visible = false
 		var heal_id: String = PlayerState.active_heal_id
 		var is_bat: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
-		var bat_prop: Node3D = cons_pivot.get_node_or_null("BatteryProp")
-		var med_prop: Node3D = cons_pivot.get_node_or_null("MedProp")
+		var bat_prop: Node3D = cons_pivot.get_node_or_null("BatteryProp") if cons_pivot != null else null
+		var med_prop: Node3D = cons_pivot.get_node_or_null("MedProp") if cons_pivot != null else null
 		if bat_prop:
 			bat_prop.visible = is_bat
 		if med_prop:
@@ -470,7 +471,7 @@ func _animate_viewmodel(delta: float) -> void:
 		var hp_prog: float = 1.0 - clampf(PlayerState.heal_cast_timer / maxf(0.1, PlayerState.heal_cast_total), 0.0, 1.0)
 		var pulse_w: float = sin(hp_prog * PI * 8.0)
 
-		if is_bat and bat_prop != null:
+		if is_bat and bat_prop != null and cons_pivot != null:
 			# Update capacitor core color (Blue for Cell, Cyan for Battery, Violet-Gold for Phoenix)
 			var core_mesh: MeshInstance3D = bat_prop.get_node_or_null("BatteryCoreMesh")
 			if core_mesh and core_mesh.material_override is StandardMaterial3D:
@@ -481,8 +482,8 @@ func _animate_viewmodel(delta: float) -> void:
 				cmat.emission_energy_multiplier = 3.0 + hp_prog * 5.5
 
 			# Bring battery to center screen, twist top cap & pull capacitor open!
-			cons_pivot.position = cons_pivot.position.lerp(Vector3(-0.14, 0.08 + sin(hp_prog * TAU * 3.0) * 0.008, -0.14), delta * 14.0)
-			cons_pivot.rotation = Vector3(0.22, 0.35, -0.25 + pulse_w * 0.04)
+			cons_pivot.position = cons_pivot.position.lerp(Vector3(-0.02, 0.05 + sin(hp_prog * TAU * 3.0) * 0.008, -0.10), delta * 14.0)
+			cons_pivot.rotation = Vector3(0.18, 0.15, -0.05 + pulse_w * 0.04)
 			var twist_top: Node3D = bat_prop.get_node_or_null("BatteryTwistTop")
 			if twist_top:
 				twist_top.position.y = 0.085 + clampf(hp_prog * 1.3, 0.0, 1.0) * 0.038
@@ -490,32 +491,39 @@ func _animate_viewmodel(delta: float) -> void:
 
 			# Left hand grips lower battery body, Right hand reaches over to twist top cap
 			if left_arm:
-				left_arm.position = left_arm.position.lerp(Vector3(-0.14, 0.02, -0.12), delta * 14.0)
-				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.45, 0.35, -0.20), delta * 14.0)
+				left_arm.position = left_arm.position.lerp(Vector3(-0.06, -0.01, -0.10), delta * 14.0)
+				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.42, 0.28, -0.15), delta * 14.0)
 			if right_arm:
-				right_arm.position = right_arm.position.lerp(Vector3(-0.10, 0.16, -0.12), delta * 14.0)
-				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.65, -0.45, 0.35 + pulse_w * 0.12), delta * 14.0)
-			# Lower weapon chassis slightly so battery takes center stage
-			target_rot += Vector3(-0.35, 0.25, 0.32)
-		elif med_prop != null:
+				right_arm.position = right_arm.position.lerp(Vector3(0.05, 0.12, -0.09), delta * 14.0)
+				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.65, -0.38, 0.28 + pulse_w * 0.12), delta * 14.0)
+			target_rot = Vector3.ZERO
+		elif med_prop != null and cons_pivot != null:
 			# Syringe / MedKit Pneumatic Injection Animation!
-			cons_pivot.position = cons_pivot.position.lerp(Vector3(-0.10, 0.06, -0.15), delta * 14.0)
+			cons_pivot.position = cons_pivot.position.lerp(Vector3(0.0, 0.03, -0.10), delta * 14.0)
 			var jab_offset: float = sin(clampf((hp_prog - 0.15) * 3.5, 0.0, 1.0) * PI) * 0.035
 			cons_pivot.position.y -= jab_offset
-			cons_pivot.rotation = Vector3(0.48, -0.22, -0.38)
+			cons_pivot.rotation = Vector3(0.45, -0.18, -0.28)
 			var plunger: Node3D = med_prop.get_node_or_null("SyringePlunger")
 			if plunger:
 				plunger.position.y = lerpf(0.095, 0.058, clampf((hp_prog - 0.25) / 0.65, 0.0, 1.0))
 
 			if left_arm:
-				left_arm.position = left_arm.position.lerp(Vector3(-0.10, 0.05 - jab_offset, -0.14), delta * 14.0)
-				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.55, 0.42, -0.35), delta * 14.0)
-			target_rot += Vector3(-0.32, -0.18, -0.25)
+				left_arm.position = left_arm.position.lerp(Vector3(-0.05, 0.01 - jab_offset, -0.10), delta * 14.0)
+				left_arm.rotation = left_arm.rotation.lerp(Vector3(0.48, 0.35, -0.25), delta * 14.0)
+			if right_arm:
+				right_arm.position = right_arm.position.lerp(Vector3(0.04, 0.09 - jab_offset, -0.09), delta * 14.0)
+				right_arm.rotation = right_arm.rotation.lerp(Vector3(0.55, -0.28, 0.22), delta * 14.0)
+			target_rot = Vector3.ZERO
 
 		gun_rig.rotation = gun_rig.rotation.lerp(target_rot, delta * 14.0)
 		return
-	elif cons_pivot != null:
-		cons_pivot.visible = false
+	else:
+		if cons_pivot != null and cons_pivot.visible:
+			cons_pivot.visible = false
+		for child in gun_rig.get_children():
+			if child.name != "ConsumablePivot" and child.name != "MuzzleFlashNode":
+				if not child.visible:
+					child.visible = true
 
 	# =========================================================================
 	# 1. BOCEK COMPOUND BOW DRAW ANIMATION
@@ -935,8 +943,9 @@ func start_reload() -> void:
 	if int(slot["ammo"]) >= int(slot["max_ammo"]):
 		return
 	var ammo_key: String = str(wep["ammo"])
+	PlayerState.sync_ammo_reserve_from_inventory()
 	if PlayerState.selected_mode_id != "firing_range" and int(PlayerState.ammo_reserve.get(ammo_key, 0)) <= 0:
-		PlayerState.toast_pushed.emit("⚠️ 备弹耗尽！请搜刮物资箱或战利品箱补充弹药", "warn")
+		PlayerState.toast_pushed.emit("⚠️ 备弹耗尽！背包内无【%s】弹药" % _get_ammo_name(ammo_key), "warn")
 		return
 
 	is_empty_reload = (int(slot["ammo"]) <= 0)
@@ -1005,8 +1014,8 @@ func _spawn_dropped_mag() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color("#1e293b")
 	mag_drop.material_override = mat
-	mag_drop.global_position = player.camera.global_position + (-player.camera.global_transform.basis.z * 0.45) + Vector3(0, -0.25, 0)
 	world_root.add_child(mag_drop)
+	mag_drop.global_position = player.camera.global_position + (-player.camera.global_transform.basis.z * 0.45) + Vector3(0, -0.25, 0)
 	var tw := create_tween()
 	tw.tween_property(mag_drop, "global_position:y", player.global_position.y + 0.08, 0.45)
 	tw.parallel().tween_property(mag_drop, "rotation", Vector3(1.5, 0.8, 1.2), 0.45)
@@ -1226,3 +1235,16 @@ func _spawn_charge_impact_sparks(pt: Vector3, col: Color) -> void:
 	var tw := create_tween()
 	tw.tween_property(spk, "scale", Vector3.ZERO, 0.10)
 	tw.tween_callback(spk.queue_free)
+
+
+func _get_ammo_name(ammo_key: String) -> String:
+	match ammo_key:
+		"light": return "轻型子弹"
+		"heavy": return "重型子弹"
+		"energy": return "能量子弹"
+		"shotgun": return "霰弹枪弹药"
+		"sniper": return "狙击枪子弹"
+		"arrows": return "箭矢"
+		"mythic": return "神话专属弹药"
+		_: return ammo_key
+

@@ -1624,6 +1624,113 @@ func _on_weapon_swapped(_slot_a: int, _slot_b: int) -> void:
 	_refresh_hud()
 
 func _run_inventory_diagnostics() -> void:
+	print("==================================================")
+	print(">>> RUNNING HEALING VIEWMODEL & AMMO LINKAGE TESTS <<<")
+	print("==================================================")
+
+	# 1. Test PlayerState initial synchronization
+	PlayerState.reset_for_match()
+	print("[1] Verifying Initial Loadout and Ammo Reserves:")
+	print("  Slot 0: %s (ammo: %d/%d)" % [PlayerState.loadout[0]["weapon_id"], PlayerState.loadout[0]["ammo"], PlayerState.loadout[0]["max_ammo"]])
+	print("  Slot 1: %s (ammo: %d/%d)" % [PlayerState.loadout[1]["weapon_id"], PlayerState.loadout[1]["ammo"], PlayerState.loadout[1]["max_ammo"]])
+	print("  Reserve light: %d (expected 120)" % PlayerState.ammo_reserve["light"])
+	print("  Reserve shotgun: %d (expected 32)" % PlayerState.ammo_reserve["shotgun"])
+	print("  Consumables battery: %d (expected 3)" % PlayerState.consumables["shield_battery"])
+	assert(PlayerState.loadout[0]["weapon_id"] == "peacekeeper" and PlayerState.loadout[0]["ammo"] == 5)
+	assert(PlayerState.loadout[1]["weapon_id"] == "r301" and PlayerState.loadout[1]["ammo"] == 28)
+	assert(PlayerState.ammo_reserve["light"] == 120, "Light ammo reserve must equal backpack sum")
+	assert(PlayerState.ammo_reserve["shotgun"] == 32, "Shotgun ammo reserve must equal backpack sum")
+	assert(PlayerState.consumables["shield_battery"] == 3, "Battery count must equal backpack sum")
+	print("  -> Initial synchronization test PASSED!")
+
+	# 2. Test Ammo Deduction during Reload
+	print("[2] Verifying Weapon Reload & Backpack Deduction Linkage:")
+	PlayerState.active_slot = 1 # R-301
+	var slot1: Dictionary = PlayerState.loadout[1]
+	slot1["ammo"] = 0 # Simulate empty mag
+	var needed: int = int(slot1["max_ammo"]) - int(slot1["ammo"])
+	var loaded: int = PlayerState.deduct_ammo("light", needed)
+	slot1["ammo"] += loaded
+	print("  Reloaded R-301: loaded %d rounds, mag now %d/%d" % [loaded, slot1["ammo"], slot1["max_ammo"]])
+	print("  New light ammo reserve: %d (expected 92)" % PlayerState.ammo_reserve["light"])
+	assert(loaded == 28)
+	assert(slot1["ammo"] == 28)
+	assert(PlayerState.ammo_reserve["light"] == 92)
+
+	var inv_light_sum: int = 0
+	for it in PlayerState.inventory_items:
+		if it.get("type") == "ammo" and it.get("id") == "light":
+			inv_light_sum += int(it.get("count", 0))
+	print("  Actual backpack light ammo sum: %d (expected 92)" % inv_light_sum)
+	assert(inv_light_sum == 92, "Backpack inventory stacks must be deducted")
+	print("  -> Reload deduction linkage test PASSED!")
+
+	# 3. Test Viewmodel Weapon Mesh Hiding During Healing
+	print("[3] Verifying Viewmodel Gun Mesh Hiding During Healing:")
+	player.rebuild_viewmodel()
+	var vm: Node3D = player.viewmodel_holder.get_child(0)
+	var gun_rig: Node3D = vm.get_node_or_null("GunRig")
+	assert(gun_rig != null, "GunRig must exist")
+
+	var cons_pivot: Node3D = gun_rig.get_node_or_null("ConsumablePivot")
+	var left_arm: Node3D = gun_rig.get_node_or_null("LeftArmPivot")
+	var right_arm: Node3D = gun_rig.get_node_or_null("RightArmPivot")
+	var upper_rec: Node3D = gun_rig.get_node_or_null("UpperReceiver")
+	assert(cons_pivot != null and left_arm != null and right_arm != null and upper_rec != null)
+
+	# State A: Normal Idle
+	PlayerState.heal_cast_timer = 0.0
+	weapon_ctrl._animate_viewmodel(0.016)
+	assert(cons_pivot.visible == false, "Consumable prop must be hidden when idle")
+	assert(upper_rec.visible == true, "Gun mesh must be visible when idle")
+	print("  State A (Idle): Gun visible, Consumable hidden - OK")
+
+	# State B: Using Shield Battery
+	PlayerState.active_heal_id = "shield_battery"
+	PlayerState.heal_cast_total = 5.0
+	PlayerState.heal_cast_timer = 4.2
+	weapon_ctrl._animate_viewmodel(0.016)
+	assert(cons_pivot.visible == true, "Consumable prop must be visible when healing")
+	assert(upper_rec.visible == false, "Gun chassis must be HIDDEN when healing")
+	assert(left_arm.visible == true, "Left arm must remain visible")
+	assert(right_arm.visible == true, "Right arm must remain visible")
+	print("  State B (Using Battery): Gun HIDDEN, Hands & Battery visible - OK")
+
+	# State C: Using Syringe / Medkit
+	PlayerState.active_heal_id = "syringe"
+	PlayerState.heal_cast_total = 5.0
+	PlayerState.heal_cast_timer = 3.5
+	weapon_ctrl._animate_viewmodel(0.016)
+	assert(cons_pivot.visible == true, "Consumable prop must be visible when using syringe")
+	assert(upper_rec.visible == false, "Gun chassis must remain HIDDEN when using syringe")
+	print("  State C (Using Syringe): Gun HIDDEN, Hands & Syringe visible - OK")
+
+	# State D: Healing Finishes
+	PlayerState.heal_cast_timer = 0.0
+	weapon_ctrl._animate_viewmodel(0.016)
+	assert(cons_pivot.visible == false, "Consumable prop must hide when healing ends")
+	assert(upper_rec.visible == true, "Gun chassis must be RESTORED when healing ends")
+	print("  State D (Healing Finished): Gun restored to visible, Consumable hidden - OK")
+	print("  -> Viewmodel Gun Mesh Hiding test PASSED with 100% SUCCESS!")
+
+	# 4. Test Consumable & Ordnance Deduction
+	print("[4] Verifying Consumable and Ordnance Deductions:")
+	var pre_bat: int = int(PlayerState.consumables.get("shield_battery", 0))
+	PlayerState.active_heal_id = "shield_battery"
+	ability_sys._complete_heal_item()
+	var post_bat: int = int(PlayerState.consumables.get("shield_battery", 0))
+	print("  Shield battery count: %d -> %d" % [pre_bat, post_bat])
+	assert(post_bat == pre_bat - 1)
+	var inv_bat_cnt: int = 0
+	for it in PlayerState.inventory_items:
+		if it.get("type") == "consumable" and it.get("id") == "shield_battery":
+			inv_bat_cnt += int(it.get("count", 0))
+	assert(inv_bat_cnt == post_bat)
+	print("  -> Consumable deduction test PASSED!")
+
+	print("==================================================")
+	print(">>> ALL HEALING & AMMO LINKAGE TESTS PASSED! <<<")
+	print("==================================================")
 	get_tree().quit(0)
 
 func _run_victory_diagnostics() -> void:

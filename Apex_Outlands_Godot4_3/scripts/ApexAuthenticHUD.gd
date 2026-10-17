@@ -636,7 +636,7 @@ class BottomRightWidget extends Control:
 			draw_string(font, Vector2(base_x + 62.0, base_y + 62.0), cat_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#38bdf8"))
 
 			var ammo_type: String = str(wep_info.get("ammo", "light"))
-			var res_ammo: int = int(PlayerState.ammo_reserve.get(ammo_type, 60))
+			var res_ammo: int = int(PlayerState.ammo_reserve.get(ammo_type, 0))
 			if cur_wid == "bocek":
 				cur_ammo = res_ammo
 

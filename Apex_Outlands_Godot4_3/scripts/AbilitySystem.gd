@@ -433,7 +433,7 @@ func _complete_heal_item() -> void:
 	var hid: String = PlayerState.active_heal_id if PlayerState.active_heal_id != "" else PlayerState.selected_heal_id
 	if int(PlayerState.consumables.get(hid, 0)) <= 0:
 		return
-	PlayerState.consumables[hid] = int(PlayerState.consumables[hid]) - 1
+	PlayerState.deduct_consumable(hid, 1)
 	match hid:
 		"shield_cell":
 			PlayerState.shield = minf(PlayerState.max_shield, PlayerState.shield + 25.0)
@@ -452,13 +452,18 @@ func _complete_heal_item() -> void:
 	PlayerState.state_updated.emit()
 
 func throw_ordnance() -> void:
+	var oid: String = PlayerState.selected_ordnance_id
+	if int(PlayerState.ordnance.get(oid, 0)) <= 0:
+		PlayerState.toast_pushed.emit("⚠️ 投掷物【%s】数量不足！" % oid, "warn")
+		return
+	PlayerState.deduct_ordnance(oid, 1)
 	var origin: Vector3 = player.camera.global_position
 	var fwd: Vector3 = -player.camera.global_transform.basis.z
 	var raw_target: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 20.0 + Vector3(0, 0.5, 0)
 	var target_pos: Vector3 = _raycast_clamp_position(origin, raw_target, 0.6)
 	target_pos.y = maxf(0.4, _raycast_ground_height(target_pos) + 0.4)
 	AudioSynthesizer.play_melee_Whoosh(true)
-	PlayerState.toast_pushed.emit("✦ 已投掷【电弧星 / 破片手雷】！", "info")
+	PlayerState.toast_pushed.emit("✦ 已投掷【%s】！" % oid, "info")
 
 	var proj := MeshInstance3D.new()
 	var sp := SphereMesh.new()
@@ -521,8 +526,8 @@ func _spawn_jump_pad(pos: Vector3) -> void:
 	mat.emission = Color("#22c55e")
 	mat.emission_energy_multiplier = 1.8
 	pad.material_override = mat
-	pad.global_position = pos + Vector3(0, 0.14, 0)
 	world_root.add_child(pad)
+	pad.global_position = pos + Vector3(0, 0.14, 0)
 	jump_pads.append({"pos": pos, "node": pad})
 
 func _spawn_void_portal_pair(pos_a: Vector3, pos_b: Vector3) -> void:

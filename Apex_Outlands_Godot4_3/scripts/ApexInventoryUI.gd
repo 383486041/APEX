@@ -637,7 +637,35 @@ func _handle_drop(drop_pos: Vector2) -> void:
 		elif target_kind == "weapon":
 			var w_idx: int = int(hovered_slot.get("wep_idx", 0))
 			var it_id: String = str(drag_item.get("id", ""))
-			if it_id.begins_with("3x") or it_id.begins_with("2x") or it_id.begins_with("1x") or it_id.begins_with("optic"):
+			var it_type: String = str(drag_item.get("type", ""))
+			if it_type == "ammo":
+				var target_slot: Dictionary = PlayerState.loadout[w_idx]
+				var wid_t: String = str(target_slot.get("weapon_id", "empty"))
+				if wid_t != "empty" and wid_t != "":
+					var wep_t: Dictionary = GameData.get_weapon_by_id(wid_t)
+					var needed_ammo: String = str(wep_t.get("ammo", ""))
+					if needed_ammo == it_id:
+						var cur_m: int = int(target_slot.get("ammo", 0))
+						var max_m: int = int(target_slot.get("max_ammo", 20))
+						if cur_m < max_m:
+							var needed: int = max_m - cur_m
+							var loaded: int = PlayerState.deduct_ammo(it_id, needed)
+							target_slot["ammo"] = cur_m + loaded
+							AudioSynthesizer.play_reload_step("mag_in")
+							PlayerState.toast_pushed.emit("🔫 已装填【%s】！当前弹匣：%d/%d (背包剩余备弹：%d)" % [
+								str(wep_t.get("name", wid_t)), target_slot["ammo"], max_m, PlayerState.ammo_reserve.get(it_id, 0)
+							], "evo")
+							PlayerState.state_updated.emit()
+							return
+						else:
+							PlayerState.toast_pushed.emit("【%s】弹匣已满 (%d/%d)" % [str(wep_t.get("name", wid_t)), cur_m, max_m], "info")
+							return
+					else:
+						PlayerState.toast_pushed.emit("⚠️ 弹药类型不匹配！【%s】需要【%s】弹药" % [
+							str(wep_t.get("name", wid_t)), _get_ammo_name(needed_ammo)
+						], "warn")
+						return
+			elif it_id.begins_with("3x") or it_id.begins_with("2x") or it_id.begins_with("1x") or it_id.begins_with("optic"):
 				PlayerState.loadout[w_idx]["optic"] = "3x_ranger" if it_id == "optic_3x" else it_id
 				AudioSynthesizer.play_reload_step("lever_cock")
 				PlayerState.toast_pushed.emit("已装备瞄具至槽位 [%d]" % (w_idx + 1), "evo")
@@ -653,6 +681,7 @@ func _handle_drop(drop_pos: Vector2) -> void:
 			else:
 				if drag_from_idx >= 0 and drag_from_idx < PlayerState.inventory_items.size():
 					PlayerState.inventory_items.remove_at(drag_from_idx)
+			PlayerState.sync_ammo_reserve_from_inventory()
 			PlayerState.toast_pushed.emit("📦 已丢弃物品：【%s】" % _get_item_display_name(it_id), "info")
 			PlayerState.state_updated.emit()
 
@@ -781,9 +810,32 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				AudioSynthesizer.play_reload_step("lever_cock")
 				queue_redraw()
 			elif it_type == "ammo":
-				var w1: Dictionary = GameData.get_weapon_by_id(PlayerState.loadout[0]["weapon_id"])
-				var w2: Dictionary = GameData.get_weapon_by_id(PlayerState.loadout[1]["weapon_id"])
-				if it_id == str(w1["ammo"]) or it_id == str(w2["ammo"]):
+				var reloaded: bool = false
+				var try_slots := [PlayerState.active_slot, 1 if PlayerState.active_slot == 0 else 0]
+				for ws in try_slots:
+					if ws < 0 or ws >= PlayerState.loadout.size():
+						continue
+					var s_dict: Dictionary = PlayerState.loadout[ws]
+					var wid_s: String = str(s_dict.get("weapon_id", "empty"))
+					if wid_s == "empty" or wid_s == "":
+						continue
+					var wep_s: Dictionary = GameData.get_weapon_by_id(wid_s)
+					if str(wep_s.get("ammo", "")) == it_id:
+						var cur_m: int = int(s_dict.get("ammo", 0))
+						var max_m: int = int(s_dict.get("max_ammo", 20))
+						if cur_m < max_m:
+							var needed: int = max_m - cur_m
+							var loaded: int = PlayerState.deduct_ammo(it_id, needed)
+							s_dict["ammo"] = cur_m + loaded
+							reloaded = true
+							AudioSynthesizer.play_reload_step("mag_in")
+							PlayerState.toast_pushed.emit("🔫 已装填【%s】！当前弹匣：%d/%d (背包剩余备弹：%d)" % [
+								str(wep_s.get("name", wid_s)), s_dict["ammo"], max_m, PlayerState.ammo_reserve.get(it_id, 0)
+							], "evo")
+							PlayerState.state_updated.emit()
+							queue_redraw()
+							break
+				if not reloaded:
 					AudioSynthesizer.play_reload_step("mag_in")
 		elif button_idx == MOUSE_BUTTON_RIGHT:
 			AudioSynthesizer.play_reload_step("mag_out")
@@ -792,6 +844,8 @@ func _handle_mouse_click(_mpos: Vector2, button_idx: int) -> void:
 				it["count"] = int(it["count"]) - 1
 			else:
 				PlayerState.inventory_items.remove_at(idx)
+			PlayerState.sync_ammo_reserve_from_inventory()
+			PlayerState.state_updated.emit()
 			hovered_slot = {}
 			queue_redraw()
 
@@ -959,6 +1013,10 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 				elif drag_from_type == "deathbox" and drag_item.get("type") == "weapon":
 					is_drag_target = true
 					drag_target_hint = "🔫 释放以替换装备"
+				elif drag_from_type == "inventory" and str(drag_item.get("type", "")) == "ammo":
+					if not is_empty and str(drag_item.get("id", "")) == ammo_type:
+						is_drag_target = true
+						drag_target_hint = "⚡ 释放以立即装填"
 
 		var border_col: Color = ammo_col if is_equipped else Color("#334155")
 		var border_w: float = 2.0 if is_equipped else 1.2
@@ -984,11 +1042,15 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 
 			var ammo_x: float = wr.position.x + wr.size.x - 72.0
 			var ammo_str: String = "%d" % int(slot_data.get("ammo", 0))
-			var num_w := font.get_string_size(ammo_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 28).x
-			draw_string(font, Vector2(ammo_x + (44.0 - num_w) * 0.5, wr.position.y + 54), ammo_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE)
+			var num_w := font.get_string_size(ammo_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 26).x
+			draw_string(font, Vector2(ammo_x + (44.0 - num_w) * 0.5, wr.position.y + 48), ammo_str, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
 
-			var badge_center := Vector2(ammo_x + 22.0, wr.position.y + 90.0)
-			_draw_ammo_badge(badge_center, ammo_type, 17.0)
+			var res_cnt: int = int(PlayerState.ammo_reserve.get(ammo_type, 0))
+			var res_str: String = "/ %d" % res_cnt
+			draw_string(font, Vector2(ammo_x + 2.0, wr.position.y + 66), res_str, HORIZONTAL_ALIGNMENT_CENTER, 40, 12, Color("#94a3b8"))
+
+			var badge_center := Vector2(ammo_x + 22.0, wr.position.y + 94.0)
+			_draw_ammo_badge(badge_center, ammo_type, 16.0)
 		else:
 			draw_string(font, Vector2(wr.position.x + 88, wr.position.y + 24), "[空武器槽位]", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#64748b"))
 			var hint_empty: String = "拖入战利品箱武器 或 地面捡取"
@@ -1027,7 +1089,11 @@ func _draw_backpack_grid(vp: Vector2) -> void:
 
 	var w1: Dictionary = GameData.get_weapon_by_id(PlayerState.loadout[0]["weapon_id"])
 	var w2: Dictionary = GameData.get_weapon_by_id(PlayerState.loadout[1]["weapon_id"])
-	var active_ammos := [str(w1.get("ammo", "")), str(w2.get("ammo", ""))]
+	var active_ammos := []
+	if str(w1.get("id", "")) != "empty":
+		active_ammos.append(str(w1.get("ammo", "")))
+	if str(w2.get("id", "")) != "empty":
+		active_ammos.append(str(w2.get("ammo", "")))
 
 	var total_slots: int = 16
 	for i in range(total_slots):
@@ -1534,3 +1600,15 @@ func _draw_weapon_silhouette(r: Rect2, _wid: String, cat: String, accent: Color)
 	closed_poly.append(poly[0])
 	draw_polyline(closed_poly, Color.WHITE, 1.8)
 	draw_rect(Rect2(Vector2(ox + 68 * sx, oy + 18 * sy), Vector2(36 * sx, 4 * sy)), accent, true)
+
+func _get_ammo_name(atype: String) -> String:
+	match atype:
+		"light": return "轻型子弹"
+		"heavy": return "重型子弹"
+		"energy": return "能量子弹"
+		"shotgun": return "霰弹枪弹药"
+		"sniper": return "狙击枪子弹"
+		"arrows": return "箭矢"
+		"mythic": return "神话专属弹药"
+		_: return atype
+

@@ -199,6 +199,7 @@ func _input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if PlayerState.heal_cast_timer > 0.0:
 		is_ads = false
+	_update_body_perspective()
 
 	if not PlayerState.ui_modal_open:
 		var key_turn: float = 2.1 * delta
