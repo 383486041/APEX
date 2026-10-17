@@ -53,7 +53,7 @@ func _ready() -> void:
 	all_args.append_array(OS.get_cmdline_user_args())
 	for a in all_args:
 		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm":
-			get_tree().change_scene_to_file("res://scenes/MatchWorld.tscn")
+			get_tree().change_scene_to_file.call_deferred("res://scenes/MatchWorld.tscn")
 			return
 
 	PlayerState.ui_modal_open = false
