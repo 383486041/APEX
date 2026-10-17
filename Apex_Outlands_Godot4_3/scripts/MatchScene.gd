@@ -2083,10 +2083,11 @@ func _run_storm_escape_diagnostics() -> void:
 
 	# Test 2: Verify movement direction points toward safe center (origin)
 	print("\n[TEST 2] AI Safe Zone Relocation Velocity:")
-	bot._physics_process(0.016)
+	for step in range(15):
+		bot._physics_process(0.016)
 	print("  Bot velocity: %s" % str(bot.velocity))
-	assert(bot.velocity.x < -3.0, "Velocity must point towards safe center in -X")
-	assert(bot.velocity.length() > 6.0, "Sprint velocity must be high speed")
+	assert(bot.velocity.x < -5.0, "Velocity must point towards safe center in -X")
+	assert(bot.velocity.length() > 8.0, "Sprint velocity must be high speed")
 	print("  -> Passed!")
 
 	# Test 3: Storm Radiation Damage
