@@ -1,6 +1,6 @@
 # APEX 英雄：外域协议 (Apex Legends Tribute Full Game)
 
-致敬《Apex 英雄》(Apex Legends) 的全套同人游戏工程，包含 **Godot 4.3 3D 完整工程版** 与 **Web Canvas 独立单文件网页版**。
+致敬《Apex 英雄》(Apex Legends) 的全套同人游戏工程，采用 **Godot 4.3 3D 引擎 (Forward+)** 原生开发构建。
 
 ---
 
@@ -15,8 +15,6 @@
 │   ├── shaders/                # 自定义着色器
 │   ├── project.godot           # Godot 4.3 项目配置文件
 │   └── README_GODOT4_3.md      # Godot 版详细功能与键位说明
-├── Web_Canvas_Edition/         # Web 浏览器独立单文件纯纯版
-│   └── apex_outlands_protocol.html # 双击即可在任何现代浏览器中运行
 └── README.md
 ```
 
@@ -24,14 +22,10 @@
 
 ## 🎮 快速开始
 
-### 1. Godot 4.3 3D 完整版
 1. 下载并安装 [Godot Engine 4.3](https://godotengine.org/)。
 2. 启动 Godot，点击 **导入 (Import)**。
 3. 选择 `Apex_Outlands_Godot4_3/project.godot` 文件。
-4. 打开项目后按 **F5** 即可直接运行完整 3D 靶场与大厅系统。
-
-### 2. Web Canvas 单文件网页版
-- 直接使用 Chrome / Edge / Firefox 等现代浏览器双击打开 `Web_Canvas_Edition/apex_outlands_protocol.html` 即可免安装体验。
+4. 打开项目后按 **F5** 即可直接运行完整 3D 大厅、大逃杀与靶场系统。
 
 ---
 
