@@ -37,11 +37,13 @@ var heal_fx_mesh: MeshInstance3D
 var is_dying: bool = false
 var death_collapse_timer: float = 0.0
 var dying_weapon_name: String = ""
+var squad_id: int = 1
 
-func setup(leg: Dictionary, pos: Vector3, title: String, evo_lv: int = 2) -> void:
+func setup(leg: Dictionary, pos: Vector3, title: String, evo_lv: int = 2, sq_id: int = 1) -> void:
 	legend_data = leg
 	bot_name = title
 	evo_level = evo_lv
+	squad_id = sq_id
 	var tier: Dictionary = GameData.get_evo_tier(evo_lv)
 	max_shield = float(tier["max_shield"])
 	shield = max_shield
@@ -135,8 +137,23 @@ func _physics_process(delta: float) -> void:
 				if status_lbl: status_lbl.visible = true
 				_update_overhead_label()
 			else:
-				PlayerState.players_alive = maxi(1, PlayerState.players_alive - 1)
-				PlayerState.squads_alive = maxi(1, int(ceil(float(PlayerState.players_alive) / 3.0)))
+				var parent_scene: Node = get_parent()
+				var squad_wiped: bool = true
+				if parent_scene and "enemies" in parent_scene:
+					for other in parent_scene.enemies:
+						if other != self and is_instance_valid(other) and other.visible and other.hp > 0.0:
+							if "squad_id" in other and other.squad_id == squad_id:
+								squad_wiped = false
+								break
+				
+				PlayerState.players_alive = maxi(3, PlayerState.players_alive - 1)
+				if squad_wiped:
+					PlayerState.squads_alive = maxi(1, PlayerState.squads_alive - 1)
+					PlayerState.toast_pushed.emit("⚡ 敌方小队已被全灭！ SQUAD WIPED!", "evo")
+					PlayerState.killfeed_pushed.emit("✦ 你消灭了整支小队！", Color("#fbbf24"))
+					AudioSynthesizer.play_shield_crack()
+				else:
+					PlayerState.squads_alive = maxi(1, int(ceil(float(PlayerState.players_alive) / 3.0)))
 				PlayerState.state_updated.emit()
 		return
 

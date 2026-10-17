@@ -504,8 +504,11 @@ class TopRightWidget extends Control:
 		var diag_w: float = font.get_string_size(diag_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 		draw_string(font, Vector2(vp_w - right_margin - diag_w, 24.0), diag_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.7, 0.75, 0.82, 0.6))
 
-		# 2. "18 剩余小队数量 👥 54" Badge
-		var badge_w: float = 230.0
+		# 2. "18 剩余小队数量 👥 54" Badge (Synchronized with Victory & Showdown state)
+		var is_victory: bool = PlayerState.match_ended or PlayerState.squads_alive <= 1
+		var is_final_two: bool = not is_victory and PlayerState.squads_alive == 2
+
+		var badge_w: float = 248.0 if is_victory else 230.0
 		var badge_h: float = 30.0
 		var badge_x: float = vp_w - right_margin - badge_w
 		var badge_y: float = top_y
@@ -518,19 +521,35 @@ class TopRightWidget extends Control:
 			Vector2(badge_x + badge_w - slant, badge_y + badge_h),
 			Vector2(badge_x, badge_y + badge_h)
 		])
-		draw_colored_polygon(b_pts, Color(0.06, 0.08, 0.12, 0.88))
-		draw_polyline(b_pts, Color(1.0, 1.0, 1.0, 0.2), 1.2)
 
-		# Squad count "18"
-		var sq_num := str(PlayerState.squads_alive)
-		draw_string(font, Vector2(badge_x + 16, badge_y + 21), sq_num, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#ffffff"))
-
-		# "剩余小队数量"
-		draw_string(font, Vector2(badge_x + 48, badge_y + 20), "剩余小队数量", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#cbd5e1"))
-
-		# Player count "👥 54"
-		var pl_txt := "👥 %d" % PlayerState.players_alive
-		draw_string(font, Vector2(badge_x + 160, badge_y + 21), pl_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ffffff"))
+		if is_victory:
+			# Apex Champion Gold Badge
+			draw_colored_polygon(b_pts, Color(0.22, 0.16, 0.04, 0.94))
+			draw_polyline(b_pts, Color(0.96, 0.78, 0.20, 1.0), 2.0)
+			draw_line(Vector2(badge_x + slant + 4, badge_y + 2), Vector2(badge_x + badge_w - 4, badge_y + 2), Color(1.0, 0.9, 0.4, 0.6), 1.2)
+			
+			draw_string(font, Vector2(badge_x + 12, badge_y + 21), "🏆 1", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#fbbf24"))
+			draw_string(font, Vector2(badge_x + 54, badge_y + 20), "捍卫者小队 (CHAMPION)", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#fef08a"))
+			draw_string(font, Vector2(badge_x + 204, badge_y + 21), "👥 %d" % PlayerState.players_alive, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#86efac"))
+		elif is_final_two:
+			# Intense Final 2 Showdown Alert
+			draw_colored_polygon(b_pts, Color(0.18, 0.06, 0.06, 0.92))
+			draw_polyline(b_pts, Color(0.95, 0.35, 0.15, 0.95), 1.6)
+			
+			draw_string(font, Vector2(badge_x + 16, badge_y + 21), "2", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#ef4444"))
+			draw_string(font, Vector2(badge_x + 48, badge_y + 20), "决胜剩余小队", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#fca5a5"))
+			var pl_txt := "👥 %d" % PlayerState.players_alive
+			draw_string(font, Vector2(badge_x + 160, badge_y + 21), pl_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ffffff"))
+		else:
+			# Standard In-Game Count
+			draw_colored_polygon(b_pts, Color(0.06, 0.08, 0.12, 0.88))
+			draw_polyline(b_pts, Color(1.0, 1.0, 1.0, 0.2), 1.2)
+			
+			var sq_num := str(PlayerState.squads_alive)
+			draw_string(font, Vector2(badge_x + 16, badge_y + 21), sq_num, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#ffffff"))
+			draw_string(font, Vector2(badge_x + 48, badge_y + 20), "剩余小队数量", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#cbd5e1"))
+			var pl_txt := "👥 %d" % PlayerState.players_alive
+			draw_string(font, Vector2(badge_x + 160, badge_y + 21), pl_txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#ffffff"))
 
 		# 3. Player Match Stats Strip: 💀 1 | 🎯 0 | 💥 250
 		var stats_y: float = badge_y + badge_h + 8.0

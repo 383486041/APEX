@@ -81,10 +81,10 @@ var inventory_items: Array = [
 	{"type": "attachment", "id": "barrel_3", "tier": 3, "name": "Lv.3 紫色枪口补偿器"}
 ]
 
-var squads_alive: int = 18
-var players_alive: int = 54
-var kills: int = 1
-var damage_dealt: int = 250
+var squads_alive: int = 20
+var players_alive: int = 60
+var kills: int = 0
+var damage_dealt: int = 0
 var ring_stage: int = 1
 var ring_radius: float = 290.0
 
@@ -107,8 +107,8 @@ func reset_for_match() -> void:
 	ui_modal_open = false
 	hp = 100.0
 	max_hp = 100.0
-	kills = 1
-	damage_dealt = 250
+	kills = 0
+	damage_dealt = 0
 	materials = 125
 	chosen_upgrades = {"lv2": "", "lv3": ""}
 	evo_level = 2
@@ -117,8 +117,15 @@ func reset_for_match() -> void:
 	shield = max_shield
 	evo_points = 450
 	next_evo_points = 750
-	squads_alive = 18
-	players_alive = 54
+	if selected_mode_id == "firing_range":
+		squads_alive = 1
+		players_alive = 3
+	elif selected_mode_id == "mixtape_tdm":
+		squads_alive = 2
+		players_alive = 18
+	else:
+		squads_alive = 20
+		players_alive = 60
 	ring_stage = 1
 	ring_radius = 290.0
 	tac_cooldown = 0.0

@@ -328,6 +328,7 @@ var storm_damage_timer: float = 0.0
 var victory_achieved: bool = false
 var victory_panel: PanelContainer
 var victory_stats_lbl: Label
+var simulated_skirmish_timer: float = 6.5
 
 var prev_keys: Dictionary = {}
 
@@ -399,6 +400,8 @@ func _ready() -> void:
 	for arg in all_args:
 		if arg == "--test-inventory":
 			get_tree().create_timer(0.2).timeout.connect(_run_inventory_diagnostics)
+		elif arg == "--test-victory":
+			get_tree().create_timer(0.2).timeout.connect(_run_victory_diagnostics)
 		elif arg == "--screenshot":
 			get_tree().create_timer(1.2).timeout.connect(func():
 				var vp: Viewport = get_viewport()
@@ -411,7 +414,7 @@ func _ready() -> void:
 			)
 
 func _spawn_enemies() -> void:
-	var count: int = 12 if PlayerState.selected_mode_id == "firing_range" else 22
+	var count: int = 12 if PlayerState.selected_mode_id == "firing_range" else 21
 	var tier_cycle := [1, 2, 3, 4, 5] # White, Blue, Purple, Gold, Mythic Red
 	for i in range(count):
 		var leg: Dictionary = GameData.LEGENDS[i % GameData.LEGENDS.size()]
@@ -425,7 +428,9 @@ func _spawn_enemies() -> void:
 			pos = Vector3(p2.x + randf_range(-14.0, 14.0), 0.0, p2.y + randf_range(-14.0, 14.0))
 		add_child(bot)
 		var evo_lv: int = tier_cycle[i % tier_cycle.size()]
-		bot.setup(leg, pos, "%s #%d" % [str(leg["name"]), i + 1], evo_lv)
+		# Squad 1 is the player's squad. Enemy bots are grouped into squads 2, 3, 4, 5, 6, 7, 8 (3 bots per squad)
+		var squad_id: int = (i / 3) + 2 if PlayerState.selected_mode_id != "firing_range" else 99
+		bot.setup(leg, pos, "%s #%d" % [str(leg["name"]), i + 1], evo_lv, squad_id)
 		enemies.append(bot)
 
 func _is_key_just_pressed(k: int) -> bool:
@@ -471,8 +476,29 @@ func _process(delta: float) -> void:
 				_on_toast_pushed("⚠️ 毒圈辐射警报！正在持续扣除生命值！", "warn")
 				PlayerState.state_updated.emit()
 
+		# Dynamic Battle Royale Canyon Skirmish Simulation
+		if not victory_achieved and not PlayerState.match_ended:
+			var living_bots: int = 0
+			for e in enemies:
+				if is_instance_valid(e) and e.visible and e.hp > 0.0:
+					living_bots += 1
+			var min_players: int = living_bots + 3
+			if PlayerState.players_alive > min_players:
+				var rate_mult: float = 1.0 + float(PlayerState.ring_stage - 1) * 0.45
+				if ring_shrink_timer > 0.0:
+					rate_mult *= 1.8
+				simulated_skirmish_timer -= delta * rate_mult
+				if simulated_skirmish_timer <= 0.0:
+					simulated_skirmish_timer = randf_range(5.5, 9.5)
+					PlayerState.players_alive -= 1
+					var active_bot_squads: int = int(ceil(float(living_bots) / 3.0))
+					var calc_squads: int = int(ceil(float(PlayerState.players_alive) / 3.0))
+					PlayerState.squads_alive = maxi(active_bot_squads + 1, calc_squads)
+					_push_simulated_skirmish()
+					PlayerState.state_updated.emit()
+
 		# Check Victory Condition
-		if not victory_achieved and (PlayerState.players_alive <= 1 or _check_all_enemies_dead()):
+		if not victory_achieved and (PlayerState.players_alive <= 3 or _check_all_enemies_dead()):
 			victory_achieved = true
 			_trigger_victory_screen()
 
@@ -1126,12 +1152,35 @@ func _check_all_enemies_dead() -> bool:
 			return false
 	return true
 
+func _push_simulated_skirmish() -> void:
+	var weapons := ["VK-47 平行步枪", "R-301 游隼", "和平捍卫者", "电能冲锋枪", "克雷贝尔 .50", "猎兽冲锋枪", "G7 侦察枪", "EVA-8 连发散弹枪", "CAR 冲锋枪", "复仇女神"]
+	var killer_leg: Dictionary = GameData.LEGENDS[randi() % GameData.LEGENDS.size()]
+	var victim_leg: Dictionary = GameData.LEGENDS[randi() % GameData.LEGENDS.size()]
+	var killer_name := "%s #%d" % [killer_leg["name"], randi_range(2, 20)]
+	var victim_name := "%s #%d" % [victim_leg["name"], randi_range(2, 20)]
+	var is_storm: bool = randf() < 0.22
+	if is_storm:
+		PlayerState.killfeed_pushed.emit("⭕ 毒圈辐射淘汰了 %s" % victim_name, Color("#f97316"))
+		if is_instance_valid(authentic_hud):
+			authentic_hud.push_killfeed("⭕ 毒圈收缩", "☠️", victim_name)
+	else:
+		var wep: String = weapons[randi() % weapons.size()]
+		PlayerState.killfeed_pushed.emit("%s 使用 [%s] 淘汰了 %s" % [killer_name, wep, victim_name], Color("#cbd5e1"))
+		if is_instance_valid(authentic_hud):
+			authentic_hud.push_killfeed(killer_name, "🔫 " + wep, victim_name)
+
 func _trigger_victory_screen() -> void:
 	PlayerState.career_wins += 1
 	PlayerState.match_ended = true
+	# Establish Champion State: 1 winning squad, 3 players (player + teammates)
+	PlayerState.squads_alive = 1
+	PlayerState.players_alive = 3
+	PlayerState.state_updated.emit()
+
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	AudioSynthesizer.play_loot_tick_open()
 	AudioSynthesizer.play_kill_confirmed()
+	_on_toast_pushed("🏆 战场全部敌对小队已肃清！荣登 APEX 捍卫者！", "evo")
 
 	if victory_panel:
 		victory_panel.visible = true
@@ -1647,5 +1696,43 @@ func _run_inventory_diagnostics() -> void:
 
 	print("==================================================")
 	print(">>> ALL 7 INVENTORY, WEAPON & OPTIC TESTS PASSED! <<<")
+	print("==================================================")
+	get_tree().quit(0)
+
+func _run_victory_diagnostics() -> void:
+	print("==================================================")
+	print(">>> RUNNING BR SQUADS & VICTORY FLOW DIAGNOSTICS <<<")
+	print("==================================================")
+	print("Initial Squads Alive: %d (expected 20)" % PlayerState.squads_alive)
+	print("Initial Players Alive: %d (expected 60)" % PlayerState.players_alive)
+	assert(PlayerState.squads_alive == 20, "Must be 20 squads")
+	assert(PlayerState.players_alive == 60, "Must be 60 players")
+
+	# Verify spawned bots
+	print("Enemies spawned: %d" % enemies.size())
+	assert(enemies.size() == 21, "Must spawn 21 bots")
+	var sq_map: Dictionary = {}
+	for b in enemies:
+		sq_map[b.squad_id] = sq_map.get(b.squad_id, 0) + 1
+	print("Enemy Squads mapping: ", sq_map)
+	assert(sq_map.size() == 7, "Must be 7 squads")
+	for s in sq_map:
+		assert(sq_map[s] == 3, "Each squad must have 3 bots")
+
+	# Test simulated skirmish
+	_push_simulated_skirmish()
+	print("Simulated skirmish successfully pushed!")
+
+	# Trigger Victory
+	_trigger_victory_screen()
+	print("After victory trigger:")
+	print("  PlayerState.match_ended: ", PlayerState.match_ended)
+	print("  PlayerState.squads_alive: %d (expected 1)" % PlayerState.squads_alive)
+	print("  PlayerState.players_alive: %d (expected 3)" % PlayerState.players_alive)
+	assert(PlayerState.match_ended == true)
+	assert(PlayerState.squads_alive == 1)
+	assert(PlayerState.players_alive == 3)
+	print("==================================================")
+	print(">>> ALL VICTORY DIAGNOSTICS PASSED WITH 100% SUCCESS! <<<")
 	print("==================================================")
 	get_tree().quit(0)

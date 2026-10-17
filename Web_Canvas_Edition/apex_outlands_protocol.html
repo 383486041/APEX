@@ -3446,9 +3446,10 @@ class ApexOutlandsGame {
         }, 2500);
       } else {
         window.apexWorld.worldGroup.remove(enemy.mesh);
-        this.state.playersAlive = Math.max(1, this.state.playersAlive - 1);
+        const remainingEnemies = (window.apexWorld.enemies || []).filter(e => e.hp > 0);
+        this.state.playersAlive = Math.max(3, this.state.playersAlive - 1);
         this.state.squadsAlive = Math.max(1, Math.ceil(this.state.playersAlive / 3));
-        if (this.state.squadsAlive <= 1) {
+        if (this.state.squadsAlive <= 1 || remainingEnemies.length === 0) {
           this.triggerChampionVictory();
         }
       }
@@ -4055,8 +4056,27 @@ class ApexOutlandsGame {
     const plEl = document.getElementById('hud-players-alive');
     const klEl = document.getElementById('hud-kills');
     const dmEl = document.getElementById('hud-damage');
-    if (sqEl) sqEl.textContent = `${g.squadsAlive} 小队`;
-    if (plEl) plEl.textContent = `${g.playersAlive} 剩余`;
+    if (sqEl) {
+      if (g.matchEnded || g.squadsAlive <= 1) {
+        sqEl.textContent = '🏆 1 捍卫者小队';
+        sqEl.className = 'font-black text-amber-400';
+      } else if (g.squadsAlive === 2) {
+        sqEl.textContent = '2 决胜小队';
+        sqEl.className = 'font-black text-red-400 animate-pulse';
+      } else {
+        sqEl.textContent = `${g.squadsAlive} 小队`;
+        sqEl.className = 'font-black text-amber-400';
+      }
+    }
+    if (plEl) {
+      if (g.matchEnded || g.squadsAlive <= 1) {
+        plEl.textContent = '👥 3 获胜';
+        plEl.className = 'font-bold text-emerald-300';
+      } else {
+        plEl.textContent = `${g.playersAlive} 剩余`;
+        plEl.className = 'font-bold text-slate-200';
+      }
+    }
     if (klEl) klEl.textContent = g.kills;
     if (dmEl) dmEl.textContent = g.damageDealt;
 
@@ -4452,6 +4472,9 @@ class ApexOutlandsGame {
 
   triggerChampionVictory() {
     this.state.matchEnded = true;
+    this.state.squadsAlive = 1;
+    this.state.playersAlive = 3;
+    this.updateCombatHud();
     this.state.totalWins++;
     this.state.totalKills += this.state.kills;
     this.state.rankedRp += 185 + this.state.kills * 25;
