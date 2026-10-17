@@ -49,6 +49,13 @@ var ai_policy_lbl: Label
 var ai_json_edit: TextEdit
 
 func _ready() -> void:
+	var all_args: Array = OS.get_cmdline_args()
+	all_args.append_array(OS.get_cmdline_user_args())
+	for a in all_args:
+		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm":
+			get_tree().change_scene_to_file("res://scenes/MatchWorld.tscn")
+			return
+
 	PlayerState.ui_modal_open = false
 	PlayerState.inventory_open = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)

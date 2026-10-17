@@ -289,18 +289,26 @@ func add_loot_item(item: Dictionary) -> void:
 
 	match it_type:
 		"ammo":
+			var max_stack: int = 60
+			match it_id:
+				"shotgun": max_stack = 16
+				"sniper": max_stack = 28
+				"arrows": max_stack = 32
+				_: max_stack = 60
 			for inv in inventory_items:
 				if str(inv.get("type", "")) == "ammo" and str(inv.get("id", "")) == it_id:
 					var cur_c: int = int(inv.get("count", 0))
-					if cur_c < 60:
-						var space: int = 60 - cur_c
+					if cur_c < max_stack:
+						var space: int = max_stack - cur_c
 						var to_add: int = mini(space, count)
 						inv["count"] = cur_c + to_add
 						count -= to_add
 						if count <= 0:
 							break
-			if count > 0:
-				inventory_items.append({"type": "ammo", "id": it_id, "count": count})
+			while count > 0:
+				var to_add: int = mini(max_stack, count)
+				inventory_items.append({"type": "ammo", "id": it_id, "count": to_add})
+				count -= to_add
 		"consumable":
 			var max_stack: int = 4 if (it_id == "shield_cell" or it_id == "syringe") else (2 if (it_id == "shield_battery" or it_id == "med_kit") else 1)
 			for inv in inventory_items:

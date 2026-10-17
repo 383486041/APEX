@@ -399,6 +399,8 @@ func _ready() -> void:
 			get_tree().create_timer(0.2).timeout.connect(_run_inventory_diagnostics)
 		elif arg == "--test-victory":
 			get_tree().create_timer(0.2).timeout.connect(_run_victory_diagnostics)
+		elif arg == "--test-storm":
+			get_tree().create_timer(0.2).timeout.connect(_run_storm_escape_diagnostics)
 
 func _spawn_enemies() -> void:
 	var count: int = 12 if PlayerState.selected_mode_id == "firing_range" else 21
@@ -756,6 +758,65 @@ func _try_interact() -> void:
 		_refresh_hud()
 		return
 
+func _get_ammo_pickup_info(ammo_type: String) -> Dictionary:
+	match ammo_type:
+		"light":
+			return {
+				"id": "light",
+				"name": "轻型子弹",
+				"full_label": "轻型子弹 x60",
+				"count": 60,
+				"color": Color("#ea580c")
+			}
+		"heavy":
+			return {
+				"id": "heavy",
+				"name": "重型子弹",
+				"full_label": "重型子弹 x60",
+				"count": 60,
+				"color": Color("#14b8a6")
+			}
+		"energy":
+			return {
+				"id": "energy",
+				"name": "能量子弹",
+				"full_label": "能量子弹 x60",
+				"count": 60,
+				"color": Color("#84cc16")
+			}
+		"shotgun":
+			return {
+				"id": "shotgun",
+				"name": "霰弹枪弹药",
+				"full_label": "霰弹枪弹药 x16",
+				"count": 16,
+				"color": Color("#ef4444")
+			}
+		"sniper":
+			return {
+				"id": "sniper",
+				"name": "狙击枪子弹",
+				"full_label": "狙击枪子弹 x28",
+				"count": 28,
+				"color": Color("#38bdf8")
+			}
+		"arrows":
+			return {
+				"id": "arrows",
+				"name": "箭矢",
+				"full_label": "箭矢 x32",
+				"count": 32,
+				"color": Color("#f59e0b")
+			}
+		_:
+			return {
+				"id": "light",
+				"name": "轻型子弹",
+				"full_label": "轻型子弹 x60",
+				"count": 60,
+				"color": Color("#ea580c")
+			}
+
 func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 	## Spawns 4 real interactive 3D pickupable items right on the Supply Bin's interior tray (y = 0.85)!
 	var tray_y: float = bin_pos.y + 0.85
@@ -774,6 +835,8 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 		var assault_pool := ["r301", "flatline", "peacekeeper", "mastiff", "hemlok", "volt", "nemesis"]
 		var wid: String = assault_pool[randi() % assault_pool.size()]
 		var winfo: Dictionary = GameData.get_weapon_by_id(wid)
+		var a_info: Dictionary = _get_ammo_pickup_info(str(winfo.get("ammo", "light")))
+
 		_spawn_dropped_weapon({
 			"weapon_id": wid,
 			"ammo": int(winfo["mag"]),
@@ -784,8 +847,8 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 			"stock": 2,
 			"charged": 0.0
 		}, slot_offsets[0])
-		_spawn_3d_loot_pickup(slot_offsets[1], {"type": "ammo", "id": str(winfo["ammo"]), "count": 60}, "弹药砖 x60", Color("#f97316"))
-		_spawn_3d_loot_pickup(slot_offsets[2], {"type": "consumable", "id": "shield_battery", "count": 2}, "大型护盾电池 x2", Color("#38bdf8"))
+		_spawn_3d_loot_pickup(slot_offsets[1], {"type": "ammo", "id": a_info["id"], "count": a_info["count"]}, a_info["full_label"], a_info["color"])
+		_spawn_3d_loot_pickup(slot_offsets[2], {"type": "ammo", "id": a_info["id"], "count": a_info["count"]}, a_info["full_label"], a_info["color"])
 		_spawn_dropped_attachment_at(slot_offsets[3], "mag", 3, "")
 	elif bin_type == "support":
 		_spawn_3d_loot_pickup(slot_offsets[0], {"type": "consumable", "id": "shield_battery", "count": 2}, "大型护盾电池 x2", Color("#38bdf8"))
@@ -793,9 +856,11 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 		_spawn_3d_loot_pickup(slot_offsets[2], {"type": "consumable", "id": "phoenix_kit", "count": 1}, "凤凰治疗包 x1", Color("#a855f7"))
 		_spawn_3d_loot_pickup(slot_offsets[3], {"type": "consumable", "id": "shield_cell", "count": 4}, "小型护盾电池 x4", Color("#0ea5e9"))
 	else:
-		var std_pool := ["peacekeeper", "mastiff", "eva8", "bocek", "r99", "car", "wingman", "repeater3030", "spitfire"]
+		var std_pool := ["peacekeeper", "mastiff", "eva8", "bocek", "r99", "car", "wingman", "repeater3030", "spitfire", "volt", "r301", "flatline"]
 		var wid: String = std_pool[randi() % std_pool.size()]
 		var winfo: Dictionary = GameData.get_weapon_by_id(wid)
+		var a_info: Dictionary = _get_ammo_pickup_info(str(winfo.get("ammo", "light")))
+
 		_spawn_dropped_weapon({
 			"weapon_id": wid,
 			"ammo": int(winfo["mag"]),
@@ -803,7 +868,7 @@ func _spawn_supply_bin_loot_items(bin_pos: Vector3, bin_type: String) -> void:
 			"optic": "1x_hcog",
 			"charged": 0.0
 		}, slot_offsets[0])
-		_spawn_3d_loot_pickup(slot_offsets[1], {"type": "ammo", "id": str(winfo["ammo"]), "count": 60}, "弹药补充 x60", Color("#f59e0b"))
+		_spawn_3d_loot_pickup(slot_offsets[1], {"type": "ammo", "id": a_info["id"], "count": a_info["count"]}, a_info["full_label"], a_info["color"])
 		_spawn_3d_loot_pickup(slot_offsets[2], {"type": "consumable", "id": "shield_battery", "count": 1}, "大型护盾电池 x1", Color("#38bdf8"))
 		_spawn_3d_loot_pickup(slot_offsets[3], {"type": "consumable", "id": "syringe", "count": 4}, "注射器 x4", Color("#22c55e"))
 
@@ -840,35 +905,169 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 	mat_glow.albedo_color = glow_col
 	mat_glow.emission_enabled = true
 	mat_glow.emission = glow_col
-	mat_glow.emission_energy_multiplier = 2.6
+	mat_glow.emission_energy_multiplier = 2.4
 
 	var mat_dark := StandardMaterial3D.new()
 	mat_dark.albedo_color = Color("#0f172a")
-	mat_dark.metallic = 0.75
-	mat_dark.roughness = 0.30
+	mat_dark.metallic = 0.8
+	mat_dark.roughness = 0.3
 
-	if ltype == "consumable" and (lid == "shield_battery" or lid == "shield_cell" or lid == "phoenix_kit"):
-		# 3D Shield Battery Capacitor Mesh
+	if ltype == "ammo":
+		# 3D Apex Composite Ammo Crate with caliber-colored accent band and cartridge primers
+		var crate_m := MeshInstance3D.new()
+		var cm := BoxMesh.new()
+		cm.size = Vector3(0.24, 0.12, 0.16)
+		crate_m.mesh = cm
+		crate_m.material_override = mat_dark
+		node.add_child(crate_m)
+
+		var band_m := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.246, 0.045, 0.166)
+		band_m.mesh = bm
+		band_m.material_override = mat_glow
+		band_m.position.y = 0.005
+		node.add_child(band_m)
+
+		var mat_brass := StandardMaterial3D.new()
+		mat_brass.albedo_color = Color("#ef4444") if lid == "shotgun" else Color("#f59e0b")
+		mat_brass.metallic = 0.92
+		mat_brass.roughness = 0.22
+
+		for c_idx in range(3):
+			var tip_m := MeshInstance3D.new()
+			var tip_mesh := CylinderMesh.new()
+			tip_mesh.top_radius = 0.016
+			tip_mesh.bottom_radius = 0.016
+			tip_mesh.height = 0.035
+			tip_m.mesh = tip_mesh
+			tip_m.material_override = mat_brass
+			tip_m.position = Vector3(-0.06 + float(c_idx) * 0.06, 0.075, 0.0)
+			node.add_child(tip_m)
+
+	elif ltype == "consumable" and lid == "syringe":
+		# 3D Auto-Injector Syringe
+		var body_m := MeshInstance3D.new()
+		var cym := CylinderMesh.new()
+		cym.top_radius = 0.032
+		cym.bottom_radius = 0.032
+		cym.height = 0.22
+		body_m.mesh = cym
+		body_m.material_override = mat_glow
+		node.add_child(body_m)
+
+		var cap_m := MeshInstance3D.new()
+		var cpm := CylinderMesh.new()
+		cpm.top_radius = 0.046
+		cpm.bottom_radius = 0.046
+		cpm.height = 0.035
+		cap_m.mesh = cpm
+		cap_m.material_override = mat_dark
+		cap_m.position.y = 0.12
+		node.add_child(cap_m)
+
+		var needle_m := MeshInstance3D.new()
+		var nm := CylinderMesh.new()
+		nm.top_radius = 0.005
+		nm.bottom_radius = 0.02
+		nm.height = 0.06
+		needle_m.mesh = nm
+		var mat_needle := StandardMaterial3D.new()
+		mat_needle.albedo_color = Color("#94a3b8")
+		mat_needle.metallic = 0.95
+		needle_m.material_override = mat_needle
+		needle_m.position.y = -0.13
+		node.add_child(needle_m)
+
+	elif ltype == "consumable" and lid == "med_kit":
+		# 3D Medical Case with glowing cross
+		var case_m := MeshInstance3D.new()
+		var cbm := BoxMesh.new()
+		cbm.size = Vector3(0.28, 0.20, 0.14)
+		case_m.mesh = cbm
+		var mat_case := StandardMaterial3D.new()
+		mat_case.albedo_color = Color("#e2e8f0")
+		mat_case.metallic = 0.2
+		mat_case.roughness = 0.5
+		case_m.material_override = mat_case
+		node.add_child(case_m)
+
+		var cross_h := MeshInstance3D.new()
+		var chm := BoxMesh.new()
+		chm.size = Vector3(0.14, 0.045, 0.146)
+		cross_h.mesh = chm
+		cross_h.material_override = mat_glow
+		node.add_child(cross_h)
+
+		var cross_v := MeshInstance3D.new()
+		var cvm := BoxMesh.new()
+		cvm.size = Vector3(0.045, 0.14, 0.146)
+		cross_v.mesh = cvm
+		cross_v.material_override = mat_glow
+		node.add_child(cross_v)
+
+		var handle_m := MeshInstance3D.new()
+		var hm := BoxMesh.new()
+		hm.size = Vector3(0.11, 0.025, 0.035)
+		handle_m.mesh = hm
+		handle_m.material_override = mat_dark
+		handle_m.position.y = 0.115
+		node.add_child(handle_m)
+
+	elif ltype == "consumable" and lid == "shield_cell":
+		# Mini Shield Cell Capacitor
+		var cell_m := MeshInstance3D.new()
+		var clm := CylinderMesh.new()
+		clm.top_radius = 0.075
+		clm.bottom_radius = 0.075
+		clm.height = 0.18
+		cell_m.mesh = clm
+		cell_m.material_override = mat_glow
+		node.add_child(cell_m)
+
+		var top_ring := MeshInstance3D.new()
+		var trm := CylinderMesh.new()
+		trm.top_radius = 0.088
+		trm.bottom_radius = 0.088
+		trm.height = 0.035
+		top_ring.mesh = trm
+		top_ring.material_override = mat_dark
+		top_ring.position.y = 0.08
+		node.add_child(top_ring)
+
+	elif ltype == "consumable" and (lid == "shield_battery" or lid == "phoenix_kit"):
+		# Shield Battery / Phoenix Kit Turbine Capacitor
 		var cyl_m := MeshInstance3D.new()
 		var cm := CylinderMesh.new()
-		cm.top_radius = 0.11
-		cm.bottom_radius = 0.11
-		cm.height = 0.32
+		cm.top_radius = 0.10
+		cm.bottom_radius = 0.10
+		cm.height = 0.30
 		cyl_m.mesh = cm
 		cyl_m.material_override = mat_glow
 		node.add_child(cyl_m)
 
 		var cap_top := MeshInstance3D.new()
 		var ctop := CylinderMesh.new()
-		ctop.top_radius = 0.125
-		ctop.bottom_radius = 0.125
+		ctop.top_radius = 0.12
+		ctop.bottom_radius = 0.12
 		ctop.height = 0.06
 		cap_top.mesh = ctop
 		cap_top.material_override = mat_dark
 		cap_top.position.y = 0.15
 		node.add_child(cap_top)
+
+		var cap_bot := MeshInstance3D.new()
+		var cbot := CylinderMesh.new()
+		cbot.top_radius = 0.115
+		cbot.bottom_radius = 0.115
+		cbot.height = 0.04
+		cap_bot.mesh = cbot
+		cap_bot.material_override = mat_dark
+		cap_bot.position.y = -0.14
+		node.add_child(cap_bot)
+
 	elif ltype == "armor":
-		# 3D Hexagonal Armor Core Mesh
+		# 3D Hexagonal Armor Core
 		var core_m := MeshInstance3D.new()
 		var tm := TorusMesh.new()
 		tm.inner_radius = 0.14
@@ -877,11 +1076,12 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 		core_m.material_override = mat_glow
 		core_m.rotation.x = PI * 0.5
 		node.add_child(core_m)
+
 	else:
-		# 3D Medkit / Ammo Box Mesh
+		# Fallback composite crate
 		var box_m := MeshInstance3D.new()
 		var bm := BoxMesh.new()
-		bm.size = Vector3(0.28, 0.18, 0.22)
+		bm.size = Vector3(0.24, 0.14, 0.18)
 		box_m.mesh = bm
 		box_m.material_override = mat_glow
 		node.add_child(box_m)
@@ -891,22 +1091,25 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 	tw.tween_property(node, "rotation_degrees:y", 360.0, 3.5).as_relative()
 
 	var lbl := Label3D.new()
+	lbl.name = "ItemLabel3D"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
+	lbl.no_depth_test = false
 	lbl.fixed_size = true
-	lbl.pixel_size = 0.0011
+	lbl.pixel_size = 0.0012
 	lbl.font_size = 19
 	lbl.outline_size = 3
 	lbl.outline_modulate = Color(0, 0, 0, 0.95)
 	lbl.text = "[E] %s" % label_text
 	lbl.modulate = glow_col
-	lbl.position = Vector3(0, 0.34, 0)
+	lbl.position = Vector3(0, 0.36, 0)
+	lbl.visible = false # Invisible until focused by crosshair within 3.2m
 	node.add_child(lbl)
 
 	interactables.append({
 		"type": "dropped_loot",
 		"pos": spawn_pos,
 		"name": "拾取【%s】" % label_text,
+		"label_text": label_text,
 		"node": node,
 		"loot_data": loot_dict.duplicate(true)
 	})
@@ -914,39 +1117,67 @@ func _spawn_3d_loot_pickup(spawn_pos: Vector3, loot_dict: Dictionary, label_text
 func _find_nearest_interactable() -> Dictionary:
 	if player == null:
 		return {}
-	var p_pos: Vector3 = player.global_position
-	var fwd: Vector3 = -player.global_transform.basis.z.normalized()
-	if player.camera:
-		fwd = -player.camera.global_transform.basis.z.normalized()
+
+	var eye_pos: Vector3 = player.camera.global_position if player.camera else (player.global_position + Vector3(0, 1.6, 0))
+	var fwd: Vector3 = -player.camera.global_transform.basis.z.normalized() if player.camera else -player.global_transform.basis.z.normalized()
 
 	var best: Dictionary = {}
 	var best_score: float = -999.0
+
 	for it in interactables:
 		var t: String = str(it.get("type", ""))
 		if (t == "supply_bin" or t == "loot_tick") and bool(it.get("opened", false)):
 			continue
-		var to_it: Vector3 = (it["pos"] - p_pos)
-		var d: float = to_it.length()
-		if d < 5.2:
-			var dot: float = fwd.dot(to_it.normalized())
-			if dot > 0.15:
-				var score: float = dot * 2.2 - d * 0.45
-				# Prioritize individual loot items inside an opened Supply Bin when aiming at them
-				if t == "dropped_loot" or t == "dropped_weapon" or t == "dropped_attachment":
-					score += 0.35
-				if score > best_score:
-					best_score = score
-					best = it
-	if best.is_empty():
-		var best_d: float = 3.6
-		for it in interactables:
-			var t: String = str(it.get("type", ""))
-			if (t == "supply_bin" or t == "loot_tick") and bool(it.get("opened", false)):
-				continue
-			var d: float = p_pos.distance_to(it["pos"])
-			if d < best_d:
-				best_d = d
-				best = it
+
+		var item_pos: Vector3 = it.get("pos", Vector3.ZERO)
+		var it_node: Node3D = it.get("node")
+		if is_instance_valid(it_node):
+			item_pos = it_node.global_position
+
+		# Apply vertical centering offset based on interactable type
+		var vert_offset: float = 0.1
+		var max_dist: float = 3.2
+		var min_dot: float = 0.72
+
+		if t == "dropped_loot" or t == "dropped_weapon" or t == "dropped_attachment":
+			vert_offset = 0.15
+			max_dist = 3.2
+			min_dot = 0.72
+		elif t == "weapon_rack":
+			vert_offset = 0.8
+			max_dist = 3.5
+			min_dot = 0.65
+		elif t == "deathbox":
+			vert_offset = 0.45
+			max_dist = 3.8
+			min_dot = 0.45
+		elif t == "supply_bin" or t == "loot_tick":
+			vert_offset = 0.5
+			max_dist = 3.8
+			min_dot = 0.45
+		elif t == "jump_tower":
+			vert_offset = 1.0
+			max_dist = 4.5
+			min_dot = 0.30
+
+		var to_item: Vector3 = (item_pos + Vector3(0, vert_offset, 0)) - eye_pos
+		var dist: float = to_item.length()
+		if dist > max_dist:
+			continue
+
+		var dot: float = fwd.dot(to_item.normalized())
+		if dot < min_dot:
+			continue
+
+		# Score heavily weights crosshair alignment (central focus) over distance
+		var score: float = dot * 10.0 - dist * 1.5
+		if t == "dropped_loot" or t == "dropped_weapon" or t == "dropped_attachment":
+			score += 1.5 # Slight priority when aiming into an opened bin with multiple items
+
+		if score > best_score:
+			best_score = score
+			best = it
+
 	return best
 
 func _make_panel_style(bg_col: Color, border_col: Color) -> StyleBoxFlat:
@@ -1281,6 +1512,15 @@ func _update_realtime_hud() -> void:
 			hud_reload_lbl.text = ""
 
 	var near: Dictionary = _find_nearest_interactable()
+	var best_node: Node3D = near.get("node") if not near.is_empty() else null
+
+	for it in interactables:
+		var it_node: Node3D = it.get("node")
+		if is_instance_valid(it_node):
+			var lbl: Label3D = it_node.get_node_or_null("ItemLabel3D") as Label3D
+			if lbl:
+				lbl.visible = (it_node == best_node)
+
 	if not near.is_empty():
 		var itype: String = str(near.get("type", ""))
 		var is_hold: bool = (itype == "deathbox")
@@ -1541,16 +1781,18 @@ func _spawn_dropped_weapon(weapon_dict: Dictionary, spawn_pos: Vector3) -> void:
 	rot_tw.tween_property(root_wep, "rotation_degrees:y", 360.0, 4.0).as_relative()
 
 	var lbl := Label3D.new()
+	lbl.name = "ItemLabel3D"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
+	lbl.no_depth_test = false
 	lbl.fixed_size = true
-	lbl.pixel_size = 0.0011
+	lbl.pixel_size = 0.0012
 	lbl.font_size = 19
 	lbl.outline_size = 3
 	lbl.outline_modulate = Color(0, 0, 0, 0.95)
 	lbl.text = "[E] 【%s】" % str(wep_info.get("name", wid))
 	lbl.modulate = ammo_col
 	lbl.position = Vector3(0, 0.38, 0)
+	lbl.visible = false
 	root_wep.add_child(lbl)
 
 	interactables.append({
@@ -1598,14 +1840,16 @@ func _spawn_dropped_attachment_at(spawn_pos: Vector3, att_type: String, tier: in
 		aname = optic_id
 
 	var lbl := Label3D.new()
+	lbl.name = "ItemLabel3D"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
+	lbl.no_depth_test = false
 	lbl.fixed_size = true
-	lbl.pixel_size = 0.0011
+	lbl.pixel_size = 0.0012
 	lbl.font_size = 18
 	lbl.text = "[E] %s" % aname
 	lbl.modulate = tier_col
 	lbl.position = Vector3(0, 0.30, 0)
+	lbl.visible = false
 	root_att.add_child(lbl)
 
 	interactables.append({
@@ -1728,6 +1972,51 @@ func _run_inventory_diagnostics() -> void:
 	assert(inv_bat_cnt == post_bat)
 	print("  -> Consumable deduction test PASSED!")
 
+	# 5. Test Categorized Ammo & Crosshair Focus Item Visibility
+	print("[5] Verifying Categorized Ammo & Crosshair Focus Item Visibility:")
+	# A. Ammo pickup info
+	var info_light := _get_ammo_pickup_info("light")
+	var info_shotgun := _get_ammo_pickup_info("shotgun")
+	var info_sniper := _get_ammo_pickup_info("sniper")
+	var info_arrows := _get_ammo_pickup_info("arrows")
+	assert(info_light["full_label"] == "轻型子弹 x60" and info_light["count"] == 60)
+	assert(info_shotgun["full_label"] == "霰弹枪弹药 x16" and info_shotgun["count"] == 16)
+	assert(info_sniper["full_label"] == "狙击枪子弹 x28" and info_sniper["count"] == 28)
+	assert(info_arrows["full_label"] == "箭矢 x32" and info_arrows["count"] == 32)
+	print("  Categorized ammo info: Light(60), Shotgun(16), Sniper(28), Arrows(32) - OK")
+
+	# B. Test adding authentic stack
+	var pre_shotgun: int = int(PlayerState.ammo_reserve.get("shotgun", 0))
+	PlayerState.add_loot_item({"type": "ammo", "id": "shotgun", "count": 16})
+	var post_shotgun: int = int(PlayerState.ammo_reserve.get("shotgun", 0))
+	print("  Added Shotgun ammo x16: reserve %d -> %d" % [pre_shotgun, post_shotgun])
+	assert(post_shotgun == pre_shotgun + 16)
+
+	# C. Test 3D Loot Item default invisible and focus activation
+	var test_loot_pos := player.camera.global_position + (-player.camera.global_transform.basis.z * 1.5)
+	_spawn_3d_loot_pickup(test_loot_pos, {"type": "ammo", "id": "light", "count": 60}, "轻型子弹 x60", Color("#ea580c"))
+	var spawned_item: Dictionary = interactables[interactables.size() - 1]
+	var item_lbl: Label3D = spawned_item["node"].get_node_or_null("ItemLabel3D")
+	assert(item_lbl != null, "ItemLabel3D must exist")
+	assert(item_lbl.visible == false, "ItemLabel3D must be INVISIBLE by default")
+	print("  Spawned 3D loot pickup label default invisible: OK")
+
+	# D. Simulate crosshair focus within interaction range
+	_update_realtime_hud()
+	assert(item_lbl.visible == true, "ItemLabel3D must become VISIBLE when crosshair is focused on it")
+	print("  Crosshair focused on item: ItemLabel3D turned VISIBLE - OK")
+
+	# E. Simulate looking away
+	player.camera.global_transform.basis = Basis(Vector3.UP, PI) # Look 180 degrees away
+	_update_realtime_hud()
+	assert(item_lbl.visible == false, "ItemLabel3D must HIDE when looking away from item")
+	print("  Turned 180 degrees away: ItemLabel3D HIDDEN - OK")
+
+	# Clean up test loot
+	spawned_item["node"].queue_free()
+	interactables.erase(spawned_item)
+	print("  -> Categorized Ammo & Crosshair Focus Item Visibility test PASSED!")
+
 	print("==================================================")
 	print(">>> ALL HEALING & AMMO LINKAGE TESTS PASSED! <<<")
 	print("==================================================")
@@ -1768,5 +2057,68 @@ func _run_victory_diagnostics() -> void:
 	assert(PlayerState.players_alive == 3)
 	print("==================================================")
 	print(">>> ALL VICTORY DIAGNOSTICS PASSED WITH 100% SUCCESS! <<<")
+	print("==================================================")
+	get_tree().quit(0)
+
+func _run_storm_escape_diagnostics() -> void:
+	print("==================================================")
+	print(">>> RUNNING AI STORM ESCAPE & RADIATION DIAGNOSTICS <<<")
+	print("==================================================")
+	assert(enemies.size() > 0, "Enemies must exist")
+	var bot: ApexBotAI = enemies[0]
+	assert(is_instance_valid(bot))
+
+	# Test 1: Place bot outside current ring and verify ESCAPE_STORM transition
+	print("[TEST 1] AI Storm Escape State Transition:")
+	PlayerState.selected_mode_id = "br_trios"
+	PlayerState.ring_radius = 100.0
+	bot.global_position = Vector3(150.0, 0.0, 0.0)
+	bot.hp = 100.0
+	bot.shield = 75.0
+	bot.ai_state = "STRAFE_DUEL"
+	bot._physics_process(0.016)
+	print("  Bot State: %s (expected ESCAPE_STORM)" % bot.ai_state)
+	assert(bot.ai_state == "ESCAPE_STORM")
+	print("  -> Passed!")
+
+	# Test 2: Verify movement direction points toward safe center (origin)
+	print("\n[TEST 2] AI Safe Zone Relocation Velocity:")
+	bot._physics_process(0.016)
+	print("  Bot velocity: %s" % str(bot.velocity))
+	assert(bot.velocity.x < -3.0, "Velocity must point towards safe center in -X")
+	assert(bot.velocity.length() > 6.0, "Sprint velocity must be high speed")
+	print("  -> Passed!")
+
+	# Test 3: Storm Radiation Damage
+	print("\n[TEST 3] Storm Radiation Flesh Damage:")
+	var initial_hp: float = bot.hp
+	var initial_shield: float = bot.shield
+	bot.apply_storm_damage(10.0)
+	print("  Bot HP: %.1f -> %.1f, Shield: %.1f -> %.1f" % [initial_hp, bot.hp, initial_shield, bot.shield])
+	assert(bot.hp == initial_hp - 10.0, "Storm damage must directly reduce HP")
+	assert(bot.shield == initial_shield, "Storm damage must bypass shields")
+	print("  -> Passed!")
+
+	# Test 4: Re-entering safe zone transitions back to STRAFE_DUEL and re-anchors
+	print("\n[TEST 4] Safe Zone Arrival & Re-anchoring:")
+	bot.global_position = Vector3(20.0, 0.0, 0.0)
+	bot._physics_process(0.016)
+	print("  Bot State after reaching safety: %s (expected STRAFE_DUEL)" % bot.ai_state)
+	assert(bot.ai_state == "STRAFE_DUEL")
+	assert(bot.spawn_origin.distance_to(Vector3(20.0, 0.0, 0.0)) < 0.1, "Spawn origin must be re-anchored")
+	print("  -> Passed!")
+
+	# Test 5: Storm Radiation Elimination
+	print("\n[TEST 5] Storm Radiation Elimination:")
+	bot.hp = 5.0
+	bot.apply_storm_damage(10.0)
+	assert(bot.hp == 0.0)
+	assert(bot.is_dying == true)
+	assert(bot.dying_weapon_name == "毒圈辐射")
+	print("  Bot eliminated by storm radiation cleanly!")
+	print("  -> Passed!")
+
+	print("==================================================")
+	print(">>> ALL 5 AI STORM ESCAPE & RADIATION TESTS PASSED! <<<")
 	print("==================================================")
 	get_tree().quit(0)

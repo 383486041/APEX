@@ -23,13 +23,16 @@ var spawn_origin: Vector3 = Vector3.ZERO
 var strafe_phase: float = 0.0
 var strafe_dir: float = 1.0
 var ai_mode: String = "strafe" # "static", "strafe", "combat"
-var ai_state: String = "STRAFE_DUEL" # "STRAFE_DUEL", "SEEK_COVER_HEAL", "RELOADING", "AGGRESSIVE_PUSH"
+var ai_state: String = "STRAFE_DUEL" # "STRAFE_DUEL", "SEEK_COVER_HEAL", "ESCAPE_STORM", "RELOADING", "AGGRESSIVE_PUSH"
 var active_heal_type: String = "shield_battery"
 var scanned_timer: float = 0.0
 var heal_timer: float = 0.0
 var fire_cooldown: float = 1.2
 var crouch_timer: float = 0.0
 var hit_flinch: float = 0.0
+var storm_tick_timer: float = 0.0
+var storm_slide_timer: float = 0.0
+var is_sliding: bool = false
 
 # Authentic Weapon Magazine & Reload State (Matches Player Performance)
 var bot_ammo: int = 24
@@ -141,7 +144,9 @@ func _update_overhead_label() -> void:
 		return
 	var tier: Dictionary = GameData.get_evo_tier(evo_level)
 	var state_tag: String = ""
-	if ai_state == "SEEK_COVER_HEAL":
+	if ai_state == "ESCAPE_STORM":
+		state_tag = " [🏃跑毒进圈中...]"
+	elif ai_state == "SEEK_COVER_HEAL":
 		state_tag = " [⚡使用电池中...]" if active_heal_type == "shield_battery" else " [💉打药恢复中...]"
 	elif bot_reload_timer > 0.0:
 		state_tag = " [🔄换弹中...]"
@@ -204,8 +209,12 @@ func _physics_process(delta: float) -> void:
 				PlayerState.players_alive = maxi(3, PlayerState.players_alive - 1)
 				if squad_wiped:
 					PlayerState.squads_alive = maxi(1, PlayerState.squads_alive - 1)
-					PlayerState.toast_pushed.emit("⚡ 敌方小队已被全灭！ SQUAD WIPED!", "evo")
-					PlayerState.killfeed_pushed.emit("✦ 你消灭了整支小队！", Color("#fbbf24"))
+					if dying_weapon_name == "毒圈辐射":
+						PlayerState.toast_pushed.emit("⭕ 一支敌方小队在毒圈辐射中全军覆没！", "warn")
+						PlayerState.killfeed_pushed.emit("✦ 敌方小队已被毒圈淘汰！", Color("#94a3b8"))
+					else:
+						PlayerState.toast_pushed.emit("⚡ 敌方小队已被全灭！ SQUAD WIPED!", "evo")
+						PlayerState.killfeed_pushed.emit("✦ 你消灭了整支小队！", Color("#fbbf24"))
 					AudioSynthesizer.play_shield_crack()
 				else:
 					PlayerState.squads_alive = maxi(1, int(ceil(float(PlayerState.players_alive) / 3.0)))
@@ -233,6 +242,37 @@ func _physics_process(delta: float) -> void:
 	elif velocity.y < 0.0:
 		velocity.y = -0.5
 
+	# Storm / Ring Relocation & Radiation Check (Battle Royale Mode)
+	var dist_from_center: float = Vector2(global_position.x, global_position.z).length()
+	var cur_ring_r: float = PlayerState.ring_radius
+	var is_outside_ring: bool = (dist_from_center > cur_ring_r)
+	var is_near_storm_edge: bool = (dist_from_center > cur_ring_r - 20.0)
+
+	if PlayerState.selected_mode_id != "firing_range":
+		# Storm radiation damage ticks every 1.0s when outside safe zone (bypasses shields directly to HP!)
+		if is_outside_ring:
+			storm_tick_timer -= delta
+			if storm_tick_timer <= 0.0:
+				storm_tick_timer = 1.0
+				var r_stage: int = maxi(1, PlayerState.ring_stage)
+				var ring_dmg: float = 3.5 + float(r_stage) * 2.5
+				apply_storm_damage(ring_dmg)
+				if hp <= 0.0 or is_dying:
+					return
+		else:
+			storm_tick_timer = 0.5
+
+		# State transition for escaping the closing storm
+		if (is_outside_ring or is_near_storm_edge) and ai_state != "SEEK_COVER_HEAL":
+			if ai_state != "ESCAPE_STORM":
+				ai_state = "ESCAPE_STORM"
+				_update_overhead_label()
+		elif ai_state == "ESCAPE_STORM" and dist_from_center < cur_ring_r - 35.0:
+			# Successfully reached deep inside safe zone
+			ai_state = "STRAFE_DUEL"
+			spawn_origin = global_position # Re-anchor inside safe ring so bot never returns outside!
+			_update_overhead_label()
+
 	# Locate Player node
 	var player_node: PlayerController = null
 	if get_parent():
@@ -246,9 +286,10 @@ func _physics_process(delta: float) -> void:
 	if player_node != null:
 		dist_to_player = global_position.distance_to(player_node.global_position)
 		has_los = _has_line_of_sight_to_player(player_node)
-		var look_pt := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
-		if global_position.distance_to(look_pt) > 0.5:
-			look_at(look_pt, Vector3.UP)
+		if ai_state != "ESCAPE_STORM":
+			var look_pt := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
+			if global_position.distance_to(look_pt) > 0.5:
+				look_at(look_pt, Vector3.UP)
 
 	var is_moving: bool = false
 	var is_crouching: bool = false
@@ -280,7 +321,7 @@ func _physics_process(delta: float) -> void:
 		if use_imit and bool(imit.get("heal", false)) and (shield < max_shield * 0.5 or hp < 75.0):
 			wants_heal = true
 
-		if wants_heal and ai_state != "SEEK_COVER_HEAL" and randf() < 0.035:
+		if wants_heal and ai_state != "SEEK_COVER_HEAL" and ai_state != "ESCAPE_STORM" and randf() < 0.035:
 			ai_state = "SEEK_COVER_HEAL"
 			if shield <= 0.0 and bot_batteries_left > 0:
 				active_heal_type = "shield_battery"
@@ -320,8 +361,74 @@ func _physics_process(delta: float) -> void:
 				heal_fx_mesh.visible = false
 				AudioSynthesizer.play_consumable_complete(active_heal_type)
 				_update_overhead_label()
+		elif ai_state == "ESCAPE_STORM":
+			is_moving = true
+			# Vector pointing directly to safe zone center (origin)
+			var to_center := Vector3(-global_position.x, 0.0, -global_position.z)
+			var safe_dir := to_center.normalized() if to_center.length() > 0.1 else Vector3.FORWARD
+
+			# Add squad/phase lateral offset so bots don't form a single-file line
+			var squad_jitter: float = sin(strafe_phase * 0.45 + float(squad_id) * 1.5) * 0.22
+			var run_dir: Vector3 = (safe_dir + global_transform.basis.x * squad_jitter).normalized()
+
+			# Wall & Obstacle Avoidance along escape route
+			if _is_wall_in_direction(run_dir, 3.2) or is_on_wall():
+				var left_steer := run_dir.rotated(Vector3.UP, 0.75)
+				var right_steer := run_dir.rotated(Vector3.UP, -0.75)
+				if not _is_wall_in_direction(left_steer, 2.8):
+					run_dir = left_steer
+				elif not _is_wall_in_direction(right_steer, 2.8):
+					run_dir = right_steer
+				else:
+					run_dir = safe_dir.rotated(Vector3.UP, 1.4 * strafe_dir)
+
+			# High-speed sprint & momentum sliding (12.8 ~ 14.8 m/s, strictly within player sprint bounds)
+			var run_speed: float = 12.8
+			storm_slide_timer += delta
+			if storm_slide_timer > 3.6:
+				if storm_slide_timer < 4.4:
+					is_sliding = true
+					is_crouching = true
+					run_speed = 14.8
+				else:
+					is_sliding = false
+					storm_slide_timer = 0.0
+			else:
+				is_sliding = false
+
+			# Auto-vault / Jump over rocks & low walls while sprinting
+			if is_on_floor() and (is_on_wall() or _is_wall_in_direction(run_dir, 1.6)):
+				velocity.y = 11.2
+
+			desired_vel_xz = run_dir * run_speed
+
+			# Look towards running direction or glance back at player
+			if player_node != null and dist_to_player < 26.0 and has_los and not is_outside_ring:
+				var look_p := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
+				if global_position.distance_to(look_p) > 0.5:
+					look_at(look_p, Vector3.UP)
+				# Suppressive return fire while retreating
+				if bot_reload_timer <= 0.0 and bot_ammo > 0:
+					fire_cooldown -= delta
+					if fire_cooldown <= 0.0:
+						fire_cooldown = randf_range(1.4, 2.4)
+						_fire_burst_at_player(player_node)
+			else:
+				var forward_target := global_position + run_dir * 6.0
+				if global_position.distance_to(forward_target) > 0.5:
+					look_at(forward_target, Vector3.UP)
+
+			# Emergency heal in storm: If health drops below 35 and bot has syringes
+			if is_outside_ring and hp < 35.0 and bot_syringes_left > 0 and heal_timer <= 0.0:
+				ai_state = "SEEK_COVER_HEAL"
+				active_heal_type = "syringe"
+				heal_timer = 5.0
+				bot_syringes_left -= 1
+				heal_fx_mesh.visible = true
+				_update_overhead_label()
 		else:
 			is_moving = true
+			is_sliding = false
 			# Strafe reversal on timer, imitation policy, or wall detection
 			if use_imit and absf(float(imit.get("move_x", 0.0))) > 0.2:
 				strafe_dir = signf(float(imit["move_x"]))
@@ -381,6 +488,7 @@ func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> vo
 		"mode": "death" if is_dying else ("crouch" if is_crouching else ("combat" if is_moving else "idle")),
 		"is_moving": is_moving,
 		"is_crouching": is_crouching,
+		"is_sliding": is_sliding,
 		"is_in_air": not is_on_floor() and not is_dying,
 		"is_healing": (ai_state == "SEEK_COVER_HEAL"),
 		"heal_id": active_heal_type,
@@ -546,3 +654,24 @@ func _spawn_shield_crack_vfx() -> void:
 	tw.tween_property(burst, "scale", Vector3(2.4, 2.4, 2.4), 0.28)
 	tw.parallel().tween_property(bmat, "albedo_color:a", 0.0, 0.28)
 	tw.tween_callback(burst.queue_free)
+
+func apply_storm_damage(dmg: float) -> void:
+	if hp <= 0.0 or is_dying:
+		return
+	# Storm radiation directly reduces flesh HP, bypassing shields
+	hp = maxf(0.0, hp - dmg)
+	hit_flinch = 0.5
+	_update_overhead_label()
+
+	if hp <= 0.0:
+		is_dying = true
+		death_collapse_timer = 0.0
+		dying_weapon_name = "毒圈辐射"
+		if status_lbl:
+			status_lbl.visible = false
+		if scan_beacon:
+			scan_beacon.visible = false
+		if heal_fx_mesh:
+			heal_fx_mesh.visible = false
+		PlayerState.killfeed_pushed.emit("💀 %s 倒在毒圈辐射中！" % bot_name, Color("#94a3b8"))
+		AudioSynthesizer.play_shield_crack()

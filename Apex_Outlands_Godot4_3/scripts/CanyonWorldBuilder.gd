@@ -278,12 +278,15 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 		stand.add_child(gun_preview)
 
 		var lbl := Label3D.new()
+		lbl.name = "ItemLabel3D"
 		lbl.text = "[E] [%s] %s" % [str(w["cat"]), str(w["name"])]
 		lbl.font_size = 20
 		lbl.pixel_size = 0.0036
 		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		lbl.no_depth_test = false
 		lbl.modulate = w.get("accent", Color("#f97316"))
 		lbl.position = Vector3(0, 1.78, 0)
+		lbl.visible = false
 		stand.add_child(lbl)
 
 		interactables.append({
