@@ -173,8 +173,8 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 	var tabs := ["物品栏", "小队", "传奇"]
 	var tab_start_x: float = vp.x * 0.5 - (tab_w * 3.0 * 0.5)
 	for i in range(tabs.size()):
-		var tr := Rect2(tab_start_x + float(i) * tab_w, tab_y, tab_w, 36.0)
-		if tr.has_point(mpos):
+		var tab_rect := Rect2(tab_start_x + float(i) * tab_w, tab_y, tab_w, 36.0)
+		if tab_rect.has_point(mpos):
 			hovered_slot = {"kind": "tab", "tab_name": tabs[i]}
 			return
 
@@ -202,6 +202,7 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 		var d_gap: float = 9.0
 		for di in range(mini(10, d_items.size())):
 			var c_i: int = di % 2
+			@warning_ignore("integer_division")
 			var r_i: int = di / 2
 			var dr := Rect2(d_start_x + float(c_i) * (d_slot_w + d_gap), d_start_y + float(r_i) * (d_slot_h + d_gap), d_slot_w, d_slot_h)
 			if dr.has_point(mpos):
@@ -231,10 +232,10 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 		var slot_data: Dictionary = PlayerState.loadout[w_idx]
 		var att_y: float = wr.position.y + wr.size.y - 48.0
 		var att_types := ["barrel", "mag", "optic", "stock", "hopup"]
-		var slot_sz: float = 38.0
-		var gap: float = 8.0
+		var att_slot_sz: float = 38.0
+		var att_gap: float = 8.0
 		for a_i in range(att_types.size()):
-			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (slot_sz + gap), att_y, slot_sz, slot_sz)
+			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (att_slot_sz + att_gap), att_y, att_slot_sz, att_slot_sz)
 			if ar.has_point(mpos):
 				var ak_key: String = att_types[a_i]
 				var t_val: int = int(slot_data.get(ak_key, 0))
@@ -266,6 +267,7 @@ func _update_hovered_slot(mpos: Vector2) -> void:
 
 	for i in range(16):
 		var col: int = i % cols
+		@warning_ignore("integer_division")
 		var row: int = i / cols
 		var sr := Rect2(start_x + float(col) * (slot_sz + gap), start_y + float(row) * (slot_sz + gap), slot_sz, slot_sz)
 		if sr.has_point(mpos):
@@ -1001,6 +1003,7 @@ func _draw_deathbox_panel(_vp: Vector2) -> void:
 
 	for di in range(mini(10, d_items.size())):
 		var c_i: int = di % 2
+		@warning_ignore("integer_division")
 		var r_i: int = di / 2
 		var dr := Rect2(d_start_x + float(c_i) * (d_slot_w + d_gap), d_start_y + float(r_i) * (d_slot_h + d_gap), d_slot_w, d_slot_h)
 		var is_h: bool = (hovered_slot.get("kind", "") == "deathbox_item" and int(hovered_slot.get("index", -1)) == di)
@@ -1111,15 +1114,15 @@ func _draw_weapon_cards(vp: Vector2) -> void:
 			draw_string(font, Vector2(h_r.position.x + (h_r.size.x - tw) * 0.5, h_r.position.y + 22), drag_target_hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
 
 		var att_types := ["barrel", "mag", "optic", "stock", "hopup"]
-		var slot_sz: float = 38.0
-		var gap: float = 8.0
+		var att_slot_sz: float = 38.0
+		var att_gap: float = 8.0
 		var att_y: float = wr.position.y + wr.size.y - 48.0
 		for a_i in range(att_types.size()):
 			var ak: String = att_types[a_i]
 			var tier: int = int(slot_data.get(ak, 0)) if not is_empty else 0
 			if ak == "mag" and not is_empty:
 				tier = maxi(tier, int(slot_data.get("bolt", 0)))
-			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (slot_sz + gap), att_y, slot_sz, slot_sz)
+			var ar := Rect2(wr.position.x + 14.0 + float(a_i) * (att_slot_sz + att_gap), att_y, att_slot_sz, att_slot_sz)
 			_draw_attachment_slot(ar, ak, tier, str(slot_data.get("optic", "")) if not is_empty else "")
 
 func _draw_backpack_grid(vp: Vector2) -> void:
@@ -1145,6 +1148,7 @@ func _draw_backpack_grid(vp: Vector2) -> void:
 	var total_slots: int = 16
 	for i in range(total_slots):
 		var col: int = i % cols
+		@warning_ignore("integer_division")
 		var row: int = i / cols
 		var sr := Rect2(start_x + float(col) * (slot_sz + gap), start_y + float(row) * (slot_sz + gap), slot_sz, slot_sz)
 
