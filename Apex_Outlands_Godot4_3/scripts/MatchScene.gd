@@ -1549,9 +1549,9 @@ func _update_realtime_hud() -> void:
 		var want_ads: bool = (player.is_ads and PlayerState.active_slot != 2 and weapon_ctrl.reload_timer <= 0.0 and PlayerState.heal_cast_timer <= 0.0)
 		var cur_op: String = str(PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)].get("optic", "2x_bruiser"))
 
-		var cam := player.camera
-		var p_pos := cam.global_position
-		var fwd := -cam.global_transform.basis.z
+		var cam: Camera3D = player.camera
+		var p_pos: Vector3 = cam.global_position
+		var fwd: Vector3 = -cam.global_transform.basis.z
 		var min_d: float = 999.0
 		var locked_threat: bool = false
 		for bot in enemies:
@@ -2069,7 +2069,7 @@ func _run_inventory_diagnostics() -> void:
 	print("  Added Shotgun ammo x16: reserve %d -> %d" % [pre_shotgun, post_shotgun])
 	assert(post_shotgun == pre_shotgun + 16)
 
-	var test_loot_pos := player.camera.global_position + (-player.camera.global_transform.basis.z * 1.5)
+	var test_loot_pos: Vector3 = player.camera.global_position + (-player.camera.global_transform.basis.z * 1.5)
 	_spawn_3d_loot_pickup(test_loot_pos, {"type": "ammo", "id": "light", "count": 60}, "轻型子弹 x60", Color("#ea580c"))
 	var spawned_item: Dictionary = interactables[interactables.size() - 1]
 	var item_lbl: Label3D = spawned_item["node"].get_node_or_null("ItemLabel3D")

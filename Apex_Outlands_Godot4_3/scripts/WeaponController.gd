@@ -287,7 +287,7 @@ func _fire_bocek_arrow(draw_ratio: float) -> void:
 	kick_rot = Vector3(0.035, randf_range(-0.008, 0.008), -0.24)
 	player.add_camera_recoil(0.014, randf_range(-0.004, 0.004), 0.01)
 
-	var cam := player.camera
+	var cam: Camera3D = player.camera
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
 	var spread: float = lerpf(0.016, 0.0008, draw_ratio) * (0.35 if player.is_ads else 1.0)
@@ -1277,7 +1277,7 @@ func try_fire(enemies_list: Array) -> void:
 	_execute_single_shot(enemies_list, false)
 
 
-func _execute_single_shot(enemies_list: Array, is_burst_followup: bool = false) -> void:
+func _execute_single_shot(_enemies_list: Array, is_burst_followup: bool = false) -> void:
 	var slot_idx: int = clampi(PlayerState.active_slot, 0, 1)
 	var slot: Dictionary = PlayerState.loadout[slot_idx]
 	var wep: Dictionary = GameData.get_weapon_by_id(slot["weapon_id"])
@@ -1357,7 +1357,7 @@ func _execute_single_shot(enemies_list: Array, is_burst_followup: bool = false) 
 		AudioSynthesizer.play_reload_step("pump_action")
 
 	# Ballistic Calculation + Authentic Unit-Normalized Shotgun / Multi-Pellet Pattern
-	var cam := player.camera
+	var cam: Camera3D = player.camera
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
 	var cam_right: Vector3 = cam.global_transform.basis.x
@@ -1728,7 +1728,7 @@ func _spawn_brass_casing() -> void:
 	mat.roughness = 0.18
 	casing.material_override = mat
 	world_root.add_child(casing)
-	var cam := player.camera
+	var cam: Camera3D = player.camera
 	var start_p: Vector3 = cam.global_position + (-cam.global_transform.basis.z * 0.42) + (cam.global_transform.basis.x * 0.24) + Vector3(0, -0.14, 0)
 	casing.global_position = start_p
 	var end_p: Vector3 = start_p + (cam.global_transform.basis.x * randf_range(0.45, 0.75)) + Vector3(0, -0.55, randf_range(-0.2, 0.2))
@@ -1820,29 +1820,8 @@ func _spawn_bullet_tracer(p_from: Vector3, p_to: Vector3, col: Color, radius: fl
 	)
 
 
-func _spawn_melee_slash_wave(col: Color) -> void:
-	if world_root == null or player == null:
-		return
-	var wave := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.55
-	torus.outer_radius = 0.68
-	wave.mesh = torus
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(col.r, col.g, col.b, 0.78)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.emission_enabled = true
-	mat.emission = col
-	mat.emission_energy_multiplier = 3.6
-	wave.material_override = mat
-	world_root.add_child(wave)
-	var fwd: Vector3 = -player.camera.global_transform.basis.z
-	wave.global_position = player.camera.global_position + fwd * 1.35
-	wave.rotation = player.camera.global_rotation + Vector3(0, 0, randf_range(-0.5, 0.5))
-	var tw := create_tween()
-	tw.tween_property(wave, "global_position", wave.global_position + fwd * 2.4, 0.22)
-	tw.parallel().tween_property(wave, "scale", Vector3(1.6, 1.6, 1.6), 0.22)
-	tw.tween_callback(wave.queue_free)
+func _spawn_melee_slash_wave(_col: Color) -> void:
+	pass
 
 
 func _update_charge_rifle(delta: float) -> void:
@@ -1850,7 +1829,7 @@ func _update_charge_rifle(delta: float) -> void:
 		return
 	charge_timer += delta
 
-	var cam := player.camera
+	var cam: Camera3D = player.camera
 	var origin: Vector3 = cam.global_position
 	var fwd: Vector3 = -cam.global_transform.basis.z
 
@@ -1912,14 +1891,14 @@ func _update_charge_beam_mesh(p_from: Vector3, p_to: Vector3, is_blast: bool) ->
 	if charge_beam_mesh == null:
 		charge_beam_mesh = MeshInstance3D.new()
 		charge_beam_mesh.name = "ChargeLaserBeam"
-		var cyl := CylinderMesh.new()
-		cyl.radial_segments = 12
-		charge_beam_mesh.mesh = cyl
-		var mat := StandardMaterial3D.new()
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		mat.emission_enabled = true
-		charge_beam_mesh.material_override = mat
+		var init_cyl := CylinderMesh.new()
+		init_cyl.radial_segments = 12
+		charge_beam_mesh.mesh = init_cyl
+		var init_mat := StandardMaterial3D.new()
+		init_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		init_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		init_mat.emission_enabled = true
+		charge_beam_mesh.material_override = init_mat
 		world_root.add_child(charge_beam_mesh)
 
 	var dist: float = p_from.distance_to(p_to)

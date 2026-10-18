@@ -36,7 +36,9 @@ var cam_shake: float = 0.0
 var last_mouse_vel: Vector2 = Vector2.ZERO
 
 var is_sliding: bool = false
+var was_crouch_pressed: bool = false
 var slide_timer: float = 0.0
+var slide_cooldown: float = 0.0
 var slide_dir: Vector3 = Vector3.ZERO
 var is_skydiving: bool = false
 var in_dropship: bool = false
@@ -173,25 +175,27 @@ func _update_body_perspective() -> void:
 	if player_body_rig == null:
 		return
 	var head_node: Node3D = player_body_rig.find_child("NeckPivot", true, false)
+	var chest_node: Node3D = player_body_rig.find_child("ChestBoneAttachment", true, false)
 	var wep_mesh: Node3D = player_body_rig.find_child("HeldWeaponRoot", true, false)
 	var heirloom_mesh: Node3D = player_body_rig.find_child("HeldHeirloomRoot", true, false)
 	var back_wep: Node3D = player_body_rig.find_child("BackHolsterRoot", true, false)
 	var is_holstered: bool = (PlayerState.active_slot == 2 or PlayerState.heal_cast_timer > 0.0 or is_wall_climbing or is_mantling)
 	var show_tp_heirloom: bool = (PlayerState.active_slot == 2 and PlayerState.heal_cast_timer <= 0.0 and not is_wall_climbing and not is_mantling)
-	if is_third_person:
-		player_body_rig.visible = true
-		if head_node:
-			head_node.visible = true
-		if wep_mesh:
-			wep_mesh.visible = not is_holstered
-		if heirloom_mesh:
-			heirloom_mesh.visible = show_tp_heirloom
-		if back_wep:
-			back_wep.visible = is_holstered
-		viewmodel_holder.visible = false
-	else:
-		player_body_rig.visible = false
-		viewmodel_holder.visible = true
+	# Unified 1st-Person & 3rd-Person Full-Body Skinned Model (`统一第一人称和第三人称模型`):
+	# `player_body_rig` (`UALCharacterModel`) is ALWAYS visible in both 1st-person and 3rd-person,
+	# while `viewmodel_holder` stays hidden so both perspectives share the exact same hands, weapon, and reload!
+	player_body_rig.visible = true
+	viewmodel_holder.visible = false
+	if head_node:
+		head_node.visible = is_third_person
+	if chest_node:
+		chest_node.visible = is_third_person
+	if wep_mesh:
+		wep_mesh.visible = not is_holstered
+	if heirloom_mesh:
+		heirloom_mesh.visible = show_tp_heirloom
+	if back_wep:
+		back_wep.visible = is_third_person and is_holstered
 
 func add_camera_recoil(v_kick: float, h_kick: float, shake: float = 0.015) -> void:
 	recoil_pitch += v_kick
@@ -420,14 +424,17 @@ func _physics_process(delta: float) -> void:
 
 	# =========================================================================
 	# AUTHENTIC APEX LEGENDS WALL-CLIMB (`爬墙`) & LEDGE MANTLE DETECTION
+	# Only initiates when airborne (`not is_on_floor()`) or pressing Jump (`KEY_SPACE`)
+	# so walking into a wall on flat ground never gets stuck in a climbing loop!
 	# =========================================================================
 	var wall_check: Dictionary = _probe_climbable_wall()
-	var wants_climb: bool = (input_dir.y < -0.15) and (not crouching) and (not is_healing) and (not is_sliding)
+	var airborne_or_jump: bool = (not is_on_floor()) or Input.is_key_pressed(KEY_SPACE) or is_wall_climbing
+	var wants_climb: bool = airborne_or_jump and (input_dir.y < -0.15) and (not crouching) and (not is_healing) and (not is_sliding)
 
 	if wants_climb and bool(wall_check.get("can_mantle", false)):
 		_start_ledge_mantle(wall_check["mantle_pos"])
 		return
-	elif wants_climb and bool(wall_check.get("has_wall", false)) and climb_fatigue < 1.55 and velocity.y > -14.0:
+	elif wants_climb and bool(wall_check.get("has_wall", false)) and climb_fatigue < 1.35 and velocity.y > -14.0:
 		if not is_wall_climbing:
 			is_wall_climbing = true
 			climb_timer = 0.0
@@ -436,12 +443,9 @@ func _physics_process(delta: float) -> void:
 		climb_wall_normal = wall_check["wall_normal"]
 		climb_timer += delta
 		climb_fatigue += delta
-		var fatigue_ratio: float = clampf(climb_fatigue / 1.55, 0.0, 1.0)
+		var fatigue_ratio: float = clampf(climb_fatigue / 1.35, 0.0, 1.0)
 		var climb_spd: float = lerpf(8.8, 3.2, pow(fatigue_ratio, 1.25))
-		if PlayerState.selected_legend_id == "revenant":
-			climb_spd = 9.5
 		velocity.y = climb_spd
-		# Allow lateral shimmy along wall with A/D while pressing gently into wall to maintain contact
 		var wall_right: Vector3 = climb_wall_normal.cross(Vector3.UP).normalized()
 		var shimmy: Vector3 = wall_right * (-input_dir.x * 3.4) - climb_wall_normal * 2.6
 		velocity.x = shimmy.x
@@ -452,36 +456,46 @@ func _physics_process(delta: float) -> void:
 			climb_sound_accum = 0.0
 			AudioSynthesizer.play_footstep(true)
 
-		# Allow Wall-Bounce (`蹬墙跳`) if player taps Space while releasing W or mid-climb!
-		if Input.is_key_pressed(KEY_SPACE) and climb_timer > 0.12:
+		if Input.is_key_pressed(KEY_SPACE) and climb_timer > 0.14:
 			is_wall_climbing = false
 			velocity = climb_wall_normal * 14.8 + Vector3(0, 11.8, 0)
 			AudioSynthesizer.play_footstep(true)
 	else:
 		if is_wall_climbing:
 			is_wall_climbing = false
-			if climb_fatigue >= 1.55:
+			if climb_fatigue >= 1.35:
 				velocity.y = minf(velocity.y, -2.5)
 
 	# =========================================================================
 	# GROUND & AIRBORNE LOCOMOTION (WHEN NOT WALL-CLIMBING)
 	# =========================================================================
+	if slide_cooldown > 0.0:
+		slide_cooldown = maxf(0.0, slide_cooldown - delta)
+
+	var crouch_just_pressed: bool = crouching and (not was_crouch_pressed)
+	was_crouch_pressed = crouching
+
 	if not is_wall_climbing:
 		var horiz_speed: float = Vector2(velocity.x, velocity.z).length()
-		if crouching and (sprinting or horiz_speed > 8.2) and is_on_floor() and not is_sliding and input_dir.length() > 0.1:
+		if crouch_just_pressed and (sprinting or horiz_speed > 8.2) and is_on_floor() and not is_sliding and slide_cooldown <= 0.0 and input_dir.length() > 0.1:
 			is_sliding = true
-			slide_timer = 1.05
+			slide_timer = 0.76
 			slide_dir = move_vec if move_vec.length() > 0.1 else -global_transform.basis.z.normalized()
 			velocity.x = slide_dir.x * slide_speed
 			velocity.z = slide_dir.z * slide_speed
 			AudioSynthesizer.play_melee_Whoosh(false)
 
-		if slide_timer > 0.0:
+		if is_sliding:
 			slide_timer -= delta
-			if slide_timer <= 0.0 or not crouching:
+			if slide_timer <= 0.0 or not crouching or horiz_speed < 4.5 or not is_on_floor():
 				is_sliding = false
-		elif not crouching:
-			is_sliding = false
+				slide_timer = 0.0
+				slide_cooldown = 0.52
+				crouching = false
+		else:
+			slide_timer = 0.0
+			if sprinting and input_dir.y < -0.1:
+				crouching = false
 
 		var spd: float = base_speed
 		if sprinting and input_dir.y < 0.0:
@@ -532,6 +546,8 @@ func _physics_process(delta: float) -> void:
 				PlayerState.vtol_fuel = minf(100.0, PlayerState.vtol_fuel + 18.0 * delta)
 		else:
 			double_jump_ready = false
+			if velocity.y <= 0.0:
+				velocity.y = -0.5
 			if PlayerState.vtol_fuel < 100.0:
 				PlayerState.vtol_fuel = minf(100.0, PlayerState.vtol_fuel + 35.0 * delta)
 
@@ -614,7 +630,7 @@ func _probe_climbable_wall() -> Dictionary:
 	var waist_origin: Vector3 = global_position + Vector3(0, 0.82, 0)
 	var head_origin: Vector3 = global_position + Vector3(0, 1.88, 0)
 
-	var q_waist := PhysicsRayQueryParameters3D.create(waist_origin, waist_origin + fwd_xz * 0.88, 1)
+	var q_waist := PhysicsRayQueryParameters3D.create(waist_origin, waist_origin + fwd_xz * 0.88, 1, [get_rid()])
 	var hit_waist: Dictionary = space.intersect_ray(q_waist)
 	if hit_waist.is_empty():
 		return {"has_wall": false, "can_mantle": false}
@@ -623,24 +639,25 @@ func _probe_climbable_wall() -> Dictionary:
 	if absf(wn.y) > 0.35 or fwd_xz.dot(-wn) < 0.45:
 		return {"has_wall": false, "can_mantle": false}
 
-	var q_head := PhysicsRayQueryParameters3D.create(head_origin, head_origin + fwd_xz * 1.05, 1)
+	var q_head := PhysicsRayQueryParameters3D.create(head_origin, head_origin + fwd_xz * 1.05, 1, [get_rid()])
 	var hit_head: Dictionary = space.intersect_ray(q_head)
 
 	# If waist hits a wall AND head ray clears the top of the wall, probe downward for the ledge surface!
-	if hit_head.is_empty() and (not is_on_floor() or is_wall_climbing or velocity.y > 1.0):
+	if hit_head.is_empty():
 		var down_from: Vector3 = global_position + fwd_xz * 0.72 + Vector3(0, 2.15, 0)
 		var down_to: Vector3 = global_position + fwd_xz * 0.72 + Vector3(0, 0.35, 0)
-		var q_down := PhysicsRayQueryParameters3D.create(down_from, down_to, 1)
+		var q_down := PhysicsRayQueryParameters3D.create(down_from, down_to, 1, [get_rid()])
 		var hit_ledge: Dictionary = space.intersect_ray(q_down)
 		if not hit_ledge.is_empty() and hit_ledge["normal"].y > 0.65:
 			var ledge_pt: Vector3 = hit_ledge["position"]
 			if ledge_pt.y > global_position.y + 0.38 and ledge_pt.y <= global_position.y + 2.05:
 				return {
-					"has_wall": true,
+					"has_wall": false,
 					"wall_normal": wn,
 					"can_mantle": true,
 					"mantle_pos": ledge_pt + Vector3(0, 0.05, 0)
 				}
+		return {"has_wall": false, "can_mantle": false}
 
 	return {
 		"has_wall": true,
@@ -661,21 +678,7 @@ func _start_ledge_mantle(target_ledge_pos: Vector3) -> void:
 	add_camera_recoil(-0.045, 0.0, 0.015)
 
 
-func _update_camera_and_rig(delta: float, input_dir: Vector2, _sprinting: bool, crouching: bool) -> void:
-	var land_dip: float = sin((land_compress_timer / 0.24) * PI) * 0.16 if land_compress_timer > 0.0 else 0.0
-	if is_third_person:
-		var eye_h: float = 1.08 if is_sliding else (1.28 if crouching else 1.82)
-		eye_h -= land_dip
-		var desired_local := Vector3(0.58, eye_h, 2.28)
-		target_cam_pos = _compute_spring_arm_cam_pos(Vector3(0, eye_h * 0.88, 0), desired_local)
-	else:
-		var fp_h: float = 0.78 if is_sliding else (1.08 if crouching else 1.68)
-		fp_h -= land_dip
-		target_cam_pos = Vector3(0, fp_h, 0)
-	camera.position = camera.position.lerp(target_cam_pos, delta * 15.0)
-	var target_roll: float = -0.20 if is_sliding else (sin(climb_phase) * 0.035 if is_wall_climbing else (-input_dir.x * 0.018))
-	camera.rotation.z = lerpf(camera.rotation.z, target_roll, delta * 12.0)
-
+func _update_camera_and_rig(delta: float, input_dir: Vector2, sprinting: bool, crouching: bool) -> void:
 	# Record Player Behavior Trajectory for AI Imitation Learning
 	var enemies_arr: Array = []
 	if weapon_ctrl != null and "enemies" in weapon_ctrl:
@@ -683,31 +686,41 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, _sprinting: bool, 
 	BehaviorRecorder.record_step(delta, self, enemies_arr)
 
 	# Compute local horizontal movement angle for 3rd-person hip/leg directional alignment
+	var horiz_vel := Vector2(velocity.x, velocity.z)
 	var local_vel: Vector3 = global_transform.basis.inverse() * Vector3(velocity.x, 0.0, velocity.z)
 	var move_angle_local: float = 0.0
 	if Vector2(local_vel.x, local_vel.z).length() > 0.5:
 		if local_vel.z <= 0.15:
 			move_angle_local = clampf(atan2(-local_vel.x, maxf(0.1, -local_vel.z)), -0.78, 0.78)
 		else:
-			# Backpedaling: hips angle smoothly toward reverse diagonal
 			move_angle_local = clampf(atan2(local_vel.x, maxf(0.1, local_vel.z)), -0.68, 0.68)
 
-	# Drive procedural 3D character body rig animations in 3rd-person mode
-	if player_body_rig != null and is_third_person:
+	var firing: bool = false
+	var reloading: bool = false
+	var reload_dur: float = 1.80
+	var reload_prog: float = 0.0
+	var quick_melee: bool = false
+	if weapon_ctrl != null:
+		firing = (Time.get_ticks_msec() - int(weapon_ctrl.get("last_fire_ms"))) < 160
+		var r_timer: float = float(weapon_ctrl.get("reload_timer"))
+		reload_dur = maxf(0.45, float(weapon_ctrl.get("reload_total")))
+		reloading = r_timer > 0.0
+		reload_prog = clampf(1.0 - (r_timer / reload_dur), 0.0, 1.0) if reloading else 0.0
+		quick_melee = float(weapon_ctrl.get("quick_melee_timer")) > 0.0 or float(weapon_ctrl.get("melee_swing_timer")) > 0.0
+
+	var is_air: bool = not is_on_floor() and not is_sliding and not zipline_active and not grapple_active and not is_skydiving and not is_wall_climbing and not is_mantling
+	var cur_slot_d: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
+	var cur_wid: String = str(cur_slot_d.get("weapon_id", "r301"))
+	var is_moving_ground: bool = (input_dir.length() > 0.1 or horiz_vel.length() > 0.55) and is_on_floor() and not is_sliding
+
+	# 1. Always animate unified `player_body_rig` FIRST (in BOTH 1st-person and 3rd-person!)
+	if player_body_rig != null:
 		_update_body_perspective()
-		var firing: bool = false
-		var reloading: bool = false
-		var quick_melee: bool = false
-		if weapon_ctrl != null:
-			firing = (Time.get_ticks_msec() - int(weapon_ctrl.get("last_fire_ms"))) < 160
-			reloading = float(weapon_ctrl.get("reload_timer")) > 0.0
-			quick_melee = float(weapon_ctrl.get("quick_melee_timer")) > 0.0 or float(weapon_ctrl.get("melee_swing_timer")) > 0.0
-		var is_air: bool = not is_on_floor() and not is_sliding and not zipline_active and not grapple_active and not is_skydiving and not is_wall_climbing and not is_mantling
-		var cur_slot_d: Dictionary = PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)]
-		var cur_wid: String = str(cur_slot_d.get("weapon_id", "r301"))
 		LegendRigBuilder.animate_rig(player_body_rig, delta, {
 			"mode": "combat",
-			"is_moving": input_dir.length() > 0.1 and is_on_floor() and not is_sliding,
+			"is_first_person": not is_third_person,
+			"is_moving": is_moving_ground,
+			"is_sprinting": sprinting and is_moving_ground and not crouching and not is_ads and not firing,
 			"is_sliding": is_sliding,
 			"is_crouching": crouching and not is_sliding,
 			"is_in_air": is_air,
@@ -723,6 +736,8 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, _sprinting: bool, 
 			"heal_id": PlayerState.active_heal_id,
 			"is_heirloom": (PlayerState.active_slot == 2 or cur_wid == "empty"),
 			"is_reloading": reloading,
+			"reload_duration": reload_dur,
+			"reload_progress": reload_prog,
 			"is_firing": firing,
 			"is_melee": quick_melee,
 			"melee_prog": float(weapon_ctrl.get("active_melee_progress")) if weapon_ctrl != null else 0.0,
@@ -734,9 +749,48 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, _sprinting: bool, 
 			"weapon_id": cur_wid,
 			"strafe_phase": bob_time,
 			"strafe_dir": input_dir.x,
-			"speed": velocity.length(),
+			"speed": horiz_vel.length(),
 			"time": Time.get_ticks_msec() / 1000.0
 		})
+
+	# 2. Compute Planned 1st-Person (`Head`-Bone-Anchored) or 3rd-Person Spring-Arm Camera Position
+	var land_dip: float = sin((land_compress_timer / 0.24) * PI) * 0.14 if land_compress_timer > 0.0 else 0.0
+	if is_third_person:
+		var eye_h: float = 1.08 if is_sliding else (1.28 if crouching else 1.82)
+		eye_h -= land_dip
+		var desired_local := Vector3(0.58, eye_h, 2.28)
+		target_cam_pos = _compute_spring_arm_cam_pos(Vector3(0, eye_h * 0.88, 0), desired_local)
+		camera.position = camera.position.lerp(target_cam_pos, delta * 15.0)
+	else:
+		var head_local := Vector3(0.02, 0.82 if is_sliding else (1.08 if crouching else 1.50), -0.02)
+		if player_body_rig != null:
+			var ual_m: Node3D = player_body_rig.get_node_or_null("UALCharacterModel") as Node3D
+			if ual_m != null:
+				var skels := ual_m.find_children("*", "Skeleton3D", true, false)
+				if not skels.is_empty():
+					var skel: Skeleton3D = skels[0] as Skeleton3D
+					if skel != null:
+						var h_idx: int = skel.find_bone("Head")
+						if h_idx >= 0:
+							head_local = to_local(skel.to_global(skel.get_bone_global_pose(h_idx).origin))
+		# Planned 1st-Person Camera Framing Offset in Camera Space:
+		# - Reloading (`reloading`): pulls slightly back/right `(0.09, -0.04, 0.08)` so both `hand_l` & `hand_r`
+		#   and the magazine swap are framed 0.30m-0.38m in front of the lens!
+		# - ADS (`is_ads`): aligns camera `(0.162, -0.092, -0.10)` directly behind `HeldWeaponRoot`'s 3D optic sight!
+		# - Hipfire / Normal: `(0.035, -0.045, -0.065)` frames `HeldWeaponRoot` & hands cleanly in lower-right foreground!
+		var cam_space_ofs := Vector3(0.035, -0.045, -0.065)
+		if reloading:
+			cam_space_ofs = Vector3(0.090, -0.040, 0.080)
+		elif is_ads and PlayerState.active_slot != 2 and PlayerState.heal_cast_timer <= 0.0:
+			cam_space_ofs = Vector3(0.162, -0.092, -0.100)
+		elif quick_melee or is_wall_climbing or is_mantling:
+			cam_space_ofs = Vector3(0.020, -0.030, 0.040)
+		var cam_basis := Basis.from_euler(Vector3(pitch, 0.0, 0.0))
+		target_cam_pos = head_local + (cam_basis * cam_space_ofs) - Vector3(0.0, land_dip, 0.0)
+		camera.position = camera.position.lerp(target_cam_pos, delta * 22.0)
+
+	var target_roll: float = -0.20 if is_sliding else (sin(climb_phase) * 0.035 if is_wall_climbing else (-input_dir.x * 0.018))
+	camera.rotation.z = lerpf(camera.rotation.z, target_roll, delta * 12.0)
 
 
 func _update_viewmodel_wall_avoidance(delta: float) -> void:

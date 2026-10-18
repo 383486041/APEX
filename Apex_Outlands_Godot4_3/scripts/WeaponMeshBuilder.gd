@@ -890,49 +890,35 @@ static func create_viewmodel(weapon_data: Dictionary, is_heirloom: bool = false,
 	return root
 
 static func create_third_person_weapon_mesh(weapon_data: Dictionary) -> Node3D:
-	## Builds a lightweight, authentic 3D weapon assembly for Third-Person Character Hands & Back Holster!
+	## Unifies 1st-Person and 3rd-Person Weapon Models so they are 100% identical in geometry, attachments, and materials!
 	var wid: String = str(weapon_data.get("id", "r301"))
-	var cat: String = str(weapon_data.get("cat", "AR"))
-	var col_main: Color = weapon_data.get("color", Color("#334155"))
-	var col_accent: Color = weapon_data.get("accent", Color("#38bdf8"))
 	var rec_len: float = float(weapon_data.get("rec_len", 0.48))
 	var bar_len: float = float(weapon_data.get("barrel_len", 0.38))
 
 	var root := Node3D.new()
 	root.name = "TP_Weapon_" + wid
 
-	var mat_body := _make_mat(col_main, 0.78, 0.25)
-	var mat_dark := _make_mat(Color("#0f172a"), 0.68, 0.35)
-	var mat_steel := _make_mat(Color("#94a3b8"), 0.92, 0.18)
-	var mat_accent := _make_mat(col_accent, 0.55, 0.22, true, 2.5)
+	var vm_full: Node3D = create_viewmodel(weapon_data, false, {}, "2x_bruiser")
+	if vm_full != null:
+		var gun_rig: Node3D = vm_full.get_node_or_null("GunRig")
+		if gun_rig != null:
+			vm_full.remove_child(gun_rig)
+			gun_rig.position = Vector3.ZERO
+			gun_rig.rotation = Vector3.ZERO
+			for strip_name in ["LeftArmPivot", "RightArmPivot", "KickLegPivot", "ConsumablePivot"]:
+				var n: Node = gun_rig.get_node_or_null(strip_name)
+				if n != null:
+					gun_rig.remove_child(n)
+					n.free()
+			root.add_child(gun_rig)
+		vm_full.free()
+
 	var mat_flash := _make_mat(Color("#fbbf24"), 0.1, 0.1, true, 5.0)
-
-	if wid == "bocek":
-		_add_box(root, Vector3(0.036, 0.56, 0.06), Vector3(0, 0.02, -0.10), mat_body)
-		_add_box(root, Vector3(0.024, 0.36, 0.04), Vector3(0, 0.38, -0.02), mat_dark, Vector3(0.45, 0, 0))
-		_add_box(root, Vector3(0.024, 0.36, 0.04), Vector3(0, -0.34, -0.02), mat_dark, Vector3(-0.45, 0, 0))
-		_add_cyl(root, 0.004, 0.004, 0.88, Vector3(0, 0.02, 0.08), mat_accent)
-	else:
-		var rw: float = 0.075 if cat != "PISTOL" else 0.052
-		var rh: float = 0.115 if cat != "PISTOL" else 0.085
-		_add_box(root, Vector3(rw, rh, rec_len), Vector3(0, 0.02, -0.08), mat_body)
-		_add_box(root, Vector3(rw + 0.008, 0.022, rec_len * 0.78), Vector3(0, 0.035, -0.08), mat_accent)
-		_add_box(root, Vector3(0.045, 0.15, 0.065), Vector3(0, -0.08, 0.04), mat_dark, Vector3(-0.26, 0, 0))
-		if wid == "mastiff":
-			_add_box(root, Vector3(0.15, 0.045, 0.08), Vector3(0, 0.025, -(0.08 + rec_len * 0.5 + bar_len)), mat_accent)
-		_add_cyl(root, 0.020, 0.022, bar_len, Vector3(0, 0.025, -(0.08 + rec_len * 0.5 + bar_len * 0.5)), mat_steel, Vector3(PI * 0.5, 0, 0), 10)
-		if cat != "PISTOL":
-			_add_box(root, Vector3(0.054, 0.13, 0.22), Vector3(0, -0.01, rec_len * 0.5 + 0.04), mat_dark)
-			if cat != "SHOTGUN" or wid == "eva8":
-				_add_box(root, Vector3(0.055, 0.20, 0.085), Vector3(0, -0.14, -0.12), mat_accent, Vector3(0.22, 0, 0))
-		var op := _add_box(root, Vector3(0.056, 0.06, 0.12), Vector3(0, rh * 0.5 + 0.04, -0.06), mat_dark)
-		_add_cyl(op, 0.020, 0.020, 0.025, Vector3(0, 0.008, 0), mat_accent, Vector3(PI * 0.5, 0, 0), 10)
-
-	_attach_open_source_weapon_models(root, wid, cat, col_main, col_accent, true)
-	var mflash := _add_sphere(root, 0.15, Vector3(0, 0.025, -(0.12 + rec_len * 0.5 + bar_len)), mat_flash, "BotMuzzleFlash")
-	_add_cyl(mflash, 0.01, 0.13, 0.26, Vector3(0, 0, -0.12), mat_flash, Vector3(PI * 0.5, 0, 0), 8)
+	var mflash := _add_sphere(root, 0.14, Vector3(0, 0.025, -(0.12 + rec_len * 0.5 + bar_len)), mat_flash, "BotMuzzleFlash")
+	_add_cyl(mflash, 0.01, 0.12, 0.24, Vector3(0, 0, -0.12), mat_flash, Vector3(PI * 0.5, 0, 0), 8)
 	mflash.visible = false
 	return root
+
 
 static func _populate_heirloom_geometry(h_pivot: Node3D, legend_data: Dictionary) -> void:
 	var lid: String = str(legend_data.get("id", "wraith"))
@@ -940,85 +926,95 @@ static func _populate_heirloom_geometry(h_pivot: Node3D, legend_data: Dictionary
 	var h_col: Color = h_info.get("color", Color("#8b5cf6"))
 
 	var mat_blade := _make_mat(Color("#f8fafc"), 0.94, 0.12)
-	var mat_plasma := _make_mat(h_col, 0.4, 0.1, true, 3.8)
+	var mat_plasma := _make_mat(h_col, 0.4, 0.1, true, 3.6)
 	var mat_hilt := _make_mat(Color("#1e293b"), 0.68, 0.34)
 	var mat_gold := _make_mat(Color("#f59e0b"), 0.90, 0.18)
 	var mat_dark := _make_mat(Color("#0f172a"), 0.78, 0.28)
+	var mat_crimson := _make_mat(Color("#991b1b"), 0.45, 0.42)
 
 	match lid:
 		"octane":
 			# Octane Balisong Butterfly Knife with Stim Needle Vial
-			_add_box(h_pivot, Vector3(0.022, 0.16, 0.026), Vector3(-0.018, -0.08, 0), mat_hilt, Vector3(0, 0, 0.08), "HandleLeft")
-			_add_box(h_pivot, Vector3(0.022, 0.16, 0.026), Vector3(0.018, -0.08, 0), mat_hilt, Vector3(0, 0, -0.08), "HandleRight")
-			_add_cyl(h_pivot, 0.009, 0.009, 0.12, Vector3(-0.018, -0.08, 0), mat_plasma, Vector3.ZERO, 8, "StimVial")
-			_add_box(h_pivot, Vector3(0.012, 0.22, 0.036), Vector3(0, 0.11, 0), mat_blade, Vector3.ZERO, "TantoBlade")
-			_add_box(h_pivot, Vector3(0.015, 0.22, 0.008), Vector3(0, 0.11, -0.016), mat_plasma, Vector3.ZERO, "PlasmaEdge")
+			_add_box(h_pivot, Vector3(0.020, 0.16, 0.024), Vector3(-0.018, -0.08, 0), mat_hilt, Vector3(0, 0, 0.08), "HandleLeft")
+			_add_box(h_pivot, Vector3(0.020, 0.16, 0.024), Vector3(0.018, -0.08, 0), mat_hilt, Vector3(0, 0, -0.08), "HandleRight")
+			_add_cyl(h_pivot, 0.009, 0.009, 0.13, Vector3(-0.018, -0.08, 0), mat_plasma, Vector3.ZERO, 10, "StimVial")
+			_add_box(h_pivot, Vector3(0.008, 0.22, 0.032), Vector3(0, 0.11, 0), mat_blade, Vector3.ZERO, "TantoBlade")
+			_add_box(h_pivot, Vector3(0.010, 0.22, 0.008), Vector3(0, 0.11, -0.016), mat_plasma, Vector3.ZERO, "PlasmaEdge")
 		"bloodhound":
 			# Bloodhound Raven's Bite Nordic Battle-Axe
-			_add_cyl(h_pivot, 0.018, 0.020, 0.52, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 10, "AxeShaft")
-			_add_cyl(h_pivot, 0.024, 0.022, 0.06, Vector3(0, 0.22, 0), mat_gold, Vector3.ZERO, 10, "NordicCollar")
-			_add_box(h_pivot, Vector3(0.024, 0.16, 0.18), Vector3(0, 0.20, -0.08), mat_blade, Vector3(0.15, 0, 0), "AxeHead")
-			_add_box(h_pivot, Vector3(0.028, 0.18, 0.035), Vector3(0, 0.20, -0.17), mat_plasma, Vector3(0.15, 0, 0), "MoltenEdge")
-			_add_cyl(h_pivot, 0.004, 0.022, 0.12, Vector3(0, 0.22, 0.07), mat_gold, Vector3(PI * 0.5, 0, 0), 6, "RavenSpike")
+			_add_cyl(h_pivot, 0.017, 0.019, 0.54, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 12, "AxeShaft")
+			_add_cyl(h_pivot, 0.020, 0.020, 0.18, Vector3(0, -0.10, 0), mat_crimson, Vector3.ZERO, 12, "LeatherWrap")
+			_add_cyl(h_pivot, 0.024, 0.022, 0.06, Vector3(0, 0.22, 0), mat_gold, Vector3.ZERO, 12, "NordicCollar")
+			_add_box(h_pivot, Vector3(0.018, 0.16, 0.18), Vector3(0, 0.20, -0.08), mat_blade, Vector3(0.15, 0, 0), "AxeHead")
+			_add_box(h_pivot, Vector3(0.022, 0.18, 0.028), Vector3(0, 0.20, -0.17), mat_plasma, Vector3(0.15, 0, 0), "MoltenEdge")
+			_add_cyl(h_pivot, 0.003, 0.022, 0.12, Vector3(0, 0.22, 0.07), mat_gold, Vector3(PI * 0.5, 0, 0), 8, "RavenSpike")
 		"pathfinder":
-			# Pathfinder Championship Boxing Glove + Spring Servo
-			_add_cyl(h_pivot, 0.055, 0.062, 0.14, Vector3(0, -0.05, 0), mat_gold, Vector3.ZERO, 12, "GloveCuff")
-			_add_sphere(h_pivot, 0.095, Vector3(0, 0.08, -0.02), _make_mat(Color("#0284c7"), 0.35, 0.42), "BoxingGloveMain")
-			_add_sphere(h_pivot, 0.048, Vector3(-0.075, 0.06, -0.03), _make_mat(Color("#0369a1"), 0.35, 0.42), "BoxingThumb")
-			_add_box(h_pivot, Vector3(0.11, 0.065, 0.02), Vector3(0, 0.10, -0.105), mat_plasma, Vector3(-0.2, 0, 0), "KnuckleScreen")
+			# Pathfinder Championship Boxing Glove (3rd-person fallback)
+			_build_boxing_glove_on_arm(h_pivot, false, h_col)
 		"lifeline":
 			# Lifeline Shock Sticks (Defibrillator Drumsticks)
-			_add_cyl(h_pivot, 0.015, 0.018, 0.42, Vector3(0, 0.05, 0), mat_hilt, Vector3.ZERO, 10, "StickShaft")
-			_add_cyl(h_pivot, 0.024, 0.020, 0.08, Vector3(0, -0.12, 0), mat_gold, Vector3.ZERO, 10)
+			_add_cyl(h_pivot, 0.015, 0.018, 0.42, Vector3(0, 0.05, 0), mat_hilt, Vector3.ZERO, 12, "StickShaft")
+			_add_cyl(h_pivot, 0.024, 0.020, 0.08, Vector3(0, -0.12, 0), mat_gold, Vector3.ZERO, 12)
 			_add_sphere(h_pivot, 0.032, Vector3(0, 0.27, 0), mat_plasma, "ShockTip")
 			_add_ring(h_pivot, 0.036, 0.046, Vector3(0, 0.22, 0), mat_plasma, Vector3.ZERO, 16)
 		"gibraltar":
 			# Gibraltar War Club (Volcanic Patu Fire-Club)
-			_add_cyl(h_pivot, 0.020, 0.022, 0.48, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 10)
-			_add_box(h_pivot, Vector3(0.032, 0.26, 0.15), Vector3(0, 0.18, -0.04), mat_dark, Vector3(0.12, 0, 0), "ClubBlade")
-			_add_box(h_pivot, Vector3(0.036, 0.28, 0.032), Vector3(0, 0.18, -0.11), mat_plasma, Vector3(0.12, 0, 0), "MagmaEdge")
+			_add_cyl(h_pivot, 0.020, 0.022, 0.48, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 12)
+			_add_box(h_pivot, Vector3(0.026, 0.26, 0.15), Vector3(0, 0.18, -0.04), mat_dark, Vector3(0.12, 0, 0), "ClubBlade")
+			_add_box(h_pivot, Vector3(0.030, 0.28, 0.028), Vector3(0, 0.18, -0.11), mat_plasma, Vector3(0.12, 0, 0), "MagmaEdge")
 		"bangalore":
 			# Bangalore Cold Steel Pilot Kukri Machete
-			_add_cyl(h_pivot, 0.016, 0.018, 0.16, Vector3(0, -0.06, 0), mat_hilt, Vector3.ZERO, 8)
-			_add_box(h_pivot, Vector3(0.024, 0.14, 0.055), Vector3(0, -0.05, -0.035), mat_gold, Vector3.ZERO, "KukriGuard")
-			_add_box(h_pivot, Vector3(0.012, 0.16, 0.052), Vector3(0, 0.09, -0.01), mat_blade, Vector3(0.12, 0, 0))
-			_add_box(h_pivot, Vector3(0.012, 0.18, 0.064), Vector3(0, 0.23, -0.045), mat_blade, Vector3(0.32, 0, 0), "KukriForwardBelly")
-			_add_box(h_pivot, Vector3(0.016, 0.30, 0.014), Vector3(0, 0.16, -0.055), mat_plasma, Vector3(0.22, 0, 0), "ThermalEdge")
+			_add_cyl(h_pivot, 0.016, 0.018, 0.16, Vector3(0, -0.06, 0), mat_hilt, Vector3.ZERO, 10)
+			_add_box(h_pivot, Vector3(0.024, 0.022, 0.075), Vector3(0, 0.01, -0.01), mat_gold, Vector3.ZERO, "KukriGuard")
+			_add_box(h_pivot, Vector3(0.010, 0.16, 0.048), Vector3(0, 0.09, -0.01), mat_blade, Vector3(0.12, 0, 0))
+			_add_box(h_pivot, Vector3(0.010, 0.18, 0.058), Vector3(0, 0.23, -0.045), mat_blade, Vector3(0.32, 0, 0), "KukriForwardBelly")
+			_add_box(h_pivot, Vector3(0.014, 0.30, 0.012), Vector3(0, 0.16, -0.055), mat_plasma, Vector3(0.22, 0, 0), "ThermalEdge")
 		"ash":
 			# Ash Strongest Link Cybernetic Dual-Section Nunchaku Blade
-			_add_cyl(h_pivot, 0.016, 0.016, 0.22, Vector3(0, -0.02, 0), mat_hilt, Vector3.ZERO, 10)
-			_add_box(h_pivot, Vector3(0.012, 0.20, 0.038), Vector3(0, 0.16, -0.01), mat_blade, Vector3.ZERO, "UpperKatanaSection")
-			_add_box(h_pivot, Vector3(0.016, 0.20, 0.010), Vector3(0, 0.16, -0.028), mat_plasma)
+			_add_cyl(h_pivot, 0.016, 0.016, 0.22, Vector3(0, -0.02, 0), mat_hilt, Vector3.ZERO, 12)
+			_add_box(h_pivot, Vector3(0.010, 0.22, 0.036), Vector3(0, 0.16, -0.01), mat_blade, Vector3.ZERO, "UpperKatanaSection")
+			_add_box(h_pivot, Vector3(0.014, 0.22, 0.010), Vector3(0, 0.16, -0.028), mat_plasma)
 			_add_cyl(h_pivot, 0.008, 0.008, 0.09, Vector3(-0.03, 0.06, 0.03), mat_plasma, Vector3(0.4, 0, 0.5), 8, "EnergyTetherLink")
 		"horizon":
 			# Horizon Gravity Maw Singularity Mace
-			_add_cyl(h_pivot, 0.018, 0.020, 0.46, Vector3(0, -0.02, 0), mat_hilt, Vector3.ZERO, 10)
+			_add_cyl(h_pivot, 0.018, 0.020, 0.48, Vector3(0, -0.02, 0), mat_hilt, Vector3.ZERO, 12)
 			_add_sphere(h_pivot, 0.055, Vector3(0, 0.24, 0), mat_dark, "SingularityCore")
-			_add_ring(h_pivot, 0.072, 0.086, Vector3(0, 0.24, 0), mat_plasma, Vector3(0.4, 0, 0.3), 18)
-			_add_ring(h_pivot, 0.072, 0.086, Vector3(0, 0.24, 0), mat_gold, Vector3(-0.4, 0, -0.3), 18)
+			_add_ring(h_pivot, 0.072, 0.086, Vector3(0, 0.24, 0), mat_plasma, Vector3(0.4, 0, 0.3), 20)
+			_add_ring(h_pivot, 0.072, 0.086, Vector3(0, 0.24, 0), mat_gold, Vector3(-0.4, 0, -0.3), 20)
 		"valkyrie":
-			# Valkyrie Suzaku Winged War-Spear
-			_add_cyl(h_pivot, 0.016, 0.016, 0.68, Vector3(0, 0.04, 0), mat_hilt, Vector3.ZERO, 10, "SpearShaft")
-			_add_box(h_pivot, Vector3(0.14, 0.06, 0.022), Vector3(0, 0.22, 0), mat_gold, Vector3(0, 0, 0.15), "PhoenixWingGuard")
-			_add_cyl(h_pivot, 0.002, 0.032, 0.26, Vector3(0, 0.38, 0), mat_plasma, Vector3.ZERO, 4, "SuzakuSpearTip")
+			# Valkyrie Suzaku Winged War-Spear (Sculpted Multi-Faceted Blade, Crimson Grip Wrap, Swept Golden Phoenix Wings!)
+			_add_cyl(h_pivot, 0.015, 0.016, 0.92, Vector3(0, -0.04, 0), mat_hilt, Vector3.ZERO, 14, "SpearShaft")
+			_add_cyl(h_pivot, 0.017, 0.017, 0.34, Vector3(0, -0.02, 0), mat_crimson, Vector3.ZERO, 14, "CrimsonCordWrap")
+			_add_cyl(h_pivot, 0.022, 0.018, 0.06, Vector3(0, 0.22, 0), mat_gold, Vector3.ZERO, 14, "SuzakuCollar")
+			# Swept Twin Golden Phoenix Wings on Crossguard
+			_add_box(h_pivot, Vector3(0.014, 0.08, 0.09), Vector3(0, 0.25, -0.055), mat_gold, Vector3(-0.45, 0, 0), "PhoenixWingFront")
+			_add_box(h_pivot, Vector3(0.014, 0.08, 0.09), Vector3(0, 0.25, 0.055), mat_gold, Vector3(0.45, 0, 0), "PhoenixWingRear")
+			# Contoured Double-Edged Silver & Plasma Spearhead (replaces blocky 4-sided pyramid!)
+			var blade_core := _add_capsule(h_pivot, 0.016, 0.32, Vector3(0, 0.38, 0), mat_blade, Vector3.ZERO, "SuzakuBladeCore")
+			blade_core.scale = Vector3(0.35, 1.0, 1.45)
+			var plasma_edge := _add_capsule(h_pivot, 0.018, 0.34, Vector3(0, 0.39, 0), mat_plasma, Vector3.ZERO, "SuzakuPlasmaEdge")
+			plasma_edge.scale = Vector3(0.22, 1.02, 1.75)
+			_add_cyl(h_pivot, 0.016, 0.003, 0.10, Vector3(0, -0.54, 0), mat_gold, Vector3.ZERO, 10, "PommelCounterSpike")
 		"caustic":
 			# Caustic Death Hammer with Nox Gas Canister
-			_add_cyl(h_pivot, 0.020, 0.022, 0.52, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 10)
-			_add_box(h_pivot, Vector3(0.085, 0.11, 0.22), Vector3(0, 0.23, -0.02), mat_dark, Vector3.ZERO, "HammerSkullHead")
-			_add_cyl(h_pivot, 0.032, 0.032, 0.12, Vector3(0, 0.23, 0.08), mat_plasma, Vector3(PI * 0.5, 0, 0), 10, "NoxRearCanister")
+			_add_cyl(h_pivot, 0.020, 0.022, 0.54, Vector3(0, 0.02, 0), mat_hilt, Vector3.ZERO, 12)
+			_add_box(h_pivot, Vector3(0.085, 0.11, 0.22), Vector3(0, 0.24, -0.02), mat_dark, Vector3.ZERO, "HammerSkullHead")
+			_add_cyl(h_pivot, 0.032, 0.032, 0.12, Vector3(0, 0.24, 0.08), mat_plasma, Vector3(PI * 0.5, 0, 0), 12, "NoxRearCanister")
 		"mirage":
 			# Mirage Too Much Witt Golden Statue Trophy
-			_add_cyl(h_pivot, 0.048, 0.056, 0.08, Vector3(0, -0.08, 0), mat_dark, Vector3.ZERO, 12, "TrophyPedestal")
+			_add_cyl(h_pivot, 0.048, 0.056, 0.08, Vector3(0, -0.08, 0), mat_dark, Vector3.ZERO, 14, "TrophyPedestal")
 			_add_capsule(h_pivot, 0.034, 0.22, Vector3(0, 0.08, 0), mat_gold, Vector3.ZERO, "GoldenMirageTorso")
 			_add_sphere(h_pivot, 0.038, Vector3(0, 0.22, 0), mat_gold, "GoldenMirageHead")
-			_add_ring(h_pivot, 0.036, 0.045, Vector3(0, 0.24, 0), mat_plasma, Vector3(0.2, 0, 0), 14, "HoloGoggles")
+			_add_ring(h_pivot, 0.036, 0.045, Vector3(0, 0.24, 0), mat_plasma, Vector3(0.2, 0, 0), 16, "HoloGoggles")
 		_:
 			# Wraith Hope's Dusk Kunai
-			_add_ring(h_pivot, 0.026, 0.038, Vector3(0, -0.16, 0), mat_plasma, Vector3(0, 0, PI * 0.5), 16, "PommelRing")
-			_add_cyl(h_pivot, 0.016, 0.018, 0.15, Vector3(0, -0.06, 0), mat_hilt, Vector3.ZERO, 8, "KunaiGrip")
-			_add_box(h_pivot, Vector3(0.036, 0.024, 0.086), Vector3(0, 0.02, 0), mat_gold, Vector3.ZERO, "CrossGuard")
-			_add_cyl(h_pivot, 0.003, 0.046, 0.30, Vector3(0, 0.18, 0), mat_blade, Vector3.ZERO, 4, "KunaiBlade")
-			_add_box(h_pivot, Vector3(0.010, 0.26, 0.068), Vector3(0, 0.16, 0), mat_plasma, Vector3.ZERO, "VoidEdge")
+			_add_ring(h_pivot, 0.026, 0.038, Vector3(0, -0.16, 0), mat_plasma, Vector3(0, 0, PI * 0.5), 18, "PommelRing")
+			_add_cyl(h_pivot, 0.016, 0.018, 0.15, Vector3(0, -0.06, 0), mat_hilt, Vector3.ZERO, 10, "KunaiGrip")
+			_add_box(h_pivot, Vector3(0.028, 0.022, 0.082), Vector3(0, 0.02, 0), mat_gold, Vector3.ZERO, "CrossGuard")
+			var k_blade := _add_capsule(h_pivot, 0.016, 0.28, Vector3(0, 0.17, 0), mat_blade, Vector3.ZERO, "KunaiBlade")
+			k_blade.scale = Vector3(0.28, 1.0, 1.35)
+			var k_edge := _add_capsule(h_pivot, 0.018, 0.29, Vector3(0, 0.17, 0), mat_plasma, Vector3.ZERO, "VoidEdge")
+			k_edge.scale = Vector3(0.18, 1.02, 1.65)
 
 
 static func create_third_person_heirloom_mesh(legend_data: Dictionary) -> Node3D:
