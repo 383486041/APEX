@@ -251,6 +251,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 	for i in range(GameData.WEAPONS.size()):
 		var w: Dictionary = GameData.WEAPONS[i]
 		var rx: float = (float(i % cols_per_row) - 6.5) * 2.85
+		@warning_ignore("integer_division")
 		var rz: float = -10.5 - float(i / cols_per_row) * 4.6
 		var stand := StaticBody3D.new()
 		stand.collision_layer = 1
