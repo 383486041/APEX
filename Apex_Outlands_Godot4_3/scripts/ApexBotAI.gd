@@ -2,14 +2,16 @@ class_name ApexBotAI
 extends CharacterBody3D
 ## Autonomous Smart AI Legend Bot / Firing Range Combat Dummy for Godot 4.3.
 ## Upgrades:
-## 1. Zero Wall-Phasing (`自动穿墙修复`): True CapsuleShape3D physics collision (`collision_layer = 4`, `collision_mask = 1`),
-##    gravity (`24.5 m/s²`), `move_and_slide()`, and 3D raycast wall-avoidance steering.
-## 2. Strictly Player-Identical Performance & Weapon Sync (`ai和玩家动作性能保证一致`):
-##    - Equips real weapons from `GameData.WEAPONS` (`r301`, `flatline`, `volt`, `peacekeeper`, `hemlok`, `car`, `prowler`) with matching 3D models in two hands (`LegendRigBuilder.create_legend_rig(leg, bot_weapon_id)`).
-##    - Uses player-identical speeds (`base_speed = 9.6`, `crouch = 6.2`, `heal_walk = 5.2`, `slide_speed = 18.8`) and tactical Slide-Jump maneuvers!
-##    - Obeys authentic weapon magazine capacity (`GameData.get_weapon_mag_capacity`) and reload time, and holsters weapon onto back while using Shield Battery (`5.0s`) or Syringe (`5.0s`).
-## 3. Authentic Knockdown & Elimination Feedback (`image_0ab157.jpg`):
-##    - Emits `PlayerState.enemy_knocked_down` and `PlayerState.enemy_eliminated` with cumulative damage inflicted for the center-bottom HUD prompt!
+## 1. Eliminates Frantic Sideways Crab-Panning (`修复AI像平移且疯狂左右移动`):
+##    - Replaces frame-by-frame random strafe flipping with committed Tactical Maneuver Windows (`1.8s–3.2s` duration),
+##      diagonal sprint advances (`35°–55°`), natural weight-transfer acceleration/deceleration, and steady ADS footing while firing bursts!
+##    - Computes `move_angle_local` (angle between facing and velocity vector) and passes it to `LegendRigBuilder.animate_rig()`
+##      so the bot's hips and legs turn naturally toward its running direction while its upper torso aims at the player!
+## 2. Autonomous AI Wall-Climbing (`AI自动爬墙登高`):
+##    - When an AI bot encounters a climbable wall or crate while advancing/repositioning, it enters `bot_wall_climbing`
+##      and scales the obstacle with the authentic 3rd-person climbing animation!
+## 3. Player-Identical Weapon & Consumable Rules:
+##    - Equips real weapons from `GameData.WEAPONS`, obeys magazine capacity & reload time, and holsters weapon onto back when healing.
 
 var bot_name: String = "敌方传奇"
 var legend_data: Dictionary = {}
@@ -23,7 +25,7 @@ var spawn_origin: Vector3 = Vector3.ZERO
 var strafe_phase: float = 0.0
 var strafe_dir: float = 1.0
 var ai_mode: String = "strafe" # "static", "strafe", "combat"
-var ai_state: String = "STRAFE_DUEL" # "STRAFE_DUEL", "SEEK_COVER_HEAL", "ESCAPE_STORM", "RELOADING", "SLIDE_EVADE"
+var ai_state: String = "STRAFE_DUEL"
 var active_heal_type: String = "shield_battery"
 var scanned_timer: float = 0.0
 var heal_timer: float = 0.0
@@ -36,7 +38,18 @@ var storm_slide_timer: float = 0.0
 var is_sliding: bool = false
 var aim_pitch: float = 0.0
 
-# Authentic Weapon Magazine & Reload State (Matches Player Performance)
+# Committed Tactical Locomotion State (Prevents frantic sideways twitching!)
+var maneuver_timer: float = 0.0
+var maneuver_style: String = "DIAGONAL_ADVANCE" # "DIAGONAL_ADVANCE", "WIDE_FLANK", "ANCHOR_PACE", "ADS_HOLD"
+var forward_bias: float = 0.45 # +1.0 = advancing diagonal, -0.5 = retreating diagonal, 0.0 = wide arc
+var burst_aim_timer: float = 0.0
+var bot_wall_climbing: bool = false
+var bot_climb_timer: float = 0.0
+var bot_climb_phase: float = 0.0
+var was_on_floor_bot: bool = true
+var bot_land_timer: float = 0.0
+
+# Authentic Weapon Magazine & Reload State
 var bot_ammo: int = 28
 var bot_max_ammo: int = 28
 var bot_reload_timer: float = 0.0
@@ -83,6 +96,7 @@ func setup(leg: Dictionary, pos: Vector3, title: String, evo_lv: int = 2, sq_id:
 	position = pos
 	strafe_phase = randf() * TAU
 	strafe_dir = 1.0 if randf() > 0.5 else -1.0
+	maneuver_timer = randf_range(1.8, 3.0)
 	if PlayerState.selected_mode_id != "firing_range":
 		ai_mode = "combat"
 
@@ -239,10 +253,18 @@ func _physics_process(delta: float) -> void:
 
 	if hit_flinch > 0.0:
 		hit_flinch = maxf(0.0, hit_flinch - delta * 5.0)
+	if burst_aim_timer > 0.0:
+		burst_aim_timer = maxf(0.0, burst_aim_timer - delta)
+	if bot_land_timer > 0.0:
+		bot_land_timer = maxf(0.0, bot_land_timer - delta)
 
-	if not is_on_floor():
+	if is_on_floor() and not was_on_floor_bot and velocity.y < -3.0:
+		bot_land_timer = 0.22
+	was_on_floor_bot = is_on_floor()
+
+	if not is_on_floor() and not bot_wall_climbing:
 		velocity.y -= 24.5 * delta
-	elif velocity.y < 0.0:
+	elif is_on_floor() and velocity.y < 0.0:
 		velocity.y = -0.5
 
 	var dist_from_center: float = Vector2(global_position.x, global_position.z).length()
@@ -286,10 +308,6 @@ func _physics_process(delta: float) -> void:
 		has_los = _has_line_of_sight_to_player(player_node)
 		var dy: float = (player_node.global_position.y + 1.35) - (global_position.y + 1.45)
 		aim_pitch = clampf(atan2(dy, maxf(1.0, dist_to_player)), -0.65, 0.65)
-		if ai_state != "ESCAPE_STORM":
-			var look_pt := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
-			if global_position.distance_to(look_pt) > 0.5:
-				look_at(look_pt, Vector3.UP)
 
 	var is_moving: bool = false
 	var is_crouching: bool = false
@@ -303,21 +321,10 @@ func _physics_process(delta: float) -> void:
 			_update_overhead_label()
 
 	if ai_mode != "static":
-		var policy: Dictionary = BehaviorRecorder.learned_policy
-		var strafe_freq: float = float(policy.get("strafe_frequency", 2.2))
-		var crouch_prob: float = float(policy.get("crouch_weave_prob", 0.28))
-		var jump_prob: float = float(policy.get("jump_peek_prob", 0.08))
-		var heal_thresh: float = float(policy.get("heal_shield_threshold", 25.0))
+		var horiz_spd_now: float = Vector2(velocity.x, velocity.z).length()
+		strafe_phase += delta * clampf(horiz_spd_now * 0.42, 1.8, 4.8)
 
-		strafe_phase += delta * (2.6 + strafe_freq * 0.55)
-
-		var imit: Dictionary = BehaviorRecorder.query_imitation_action(dist_to_player, hp, shield, float(bot_ammo) / float(bot_max_ammo))
-		var use_imit: bool = not imit.is_empty()
-
-		var wants_heal: bool = (shield <= heal_thresh and hp < 85.0 and (bot_batteries_left > 0 or bot_syringes_left > 0))
-		if use_imit and bool(imit.get("heal", false)) and (shield < max_shield * 0.5 or hp < 75.0):
-			wants_heal = true
-
+		var wants_heal: bool = (shield <= 25.0 and hp < 85.0 and (bot_batteries_left > 0 or bot_syringes_left > 0))
 		if wants_heal and ai_state != "SEEK_COVER_HEAL" and ai_state != "ESCAPE_STORM" and randf() < 0.035:
 			ai_state = "SEEK_COVER_HEAL"
 			if shield <= 0.0 and bot_batteries_left > 0:
@@ -338,14 +345,15 @@ func _physics_process(delta: float) -> void:
 			is_crouching = true
 			is_moving = true
 			is_sliding = false
+			bot_wall_climbing = false
 			heal_timer -= delta
 			heal_fx_mesh.position.y = 0.6 + sin(strafe_phase * 2.0) * 0.45
 
-			var right_dir: Vector3 = global_transform.basis.x * strafe_dir
-			if _is_wall_in_direction(right_dir, 2.0) or is_on_wall():
+			var retreat_dir: Vector3 = (global_transform.basis.z * 0.55 + global_transform.basis.x * strafe_dir * 0.85).normalized()
+			if _is_wall_in_direction(retreat_dir, 2.2) or is_on_wall():
 				strafe_dir = -strafe_dir
-				right_dir = -right_dir
-			desired_vel_xz = right_dir * 4.8
+				retreat_dir = (global_transform.basis.z * 0.55 + global_transform.basis.x * strafe_dir * 0.85).normalized()
+			desired_vel_xz = retreat_dir * 4.8
 
 			if heal_timer <= 0.0:
 				if active_heal_type == "shield_battery":
@@ -363,7 +371,7 @@ func _physics_process(delta: float) -> void:
 			var to_center := Vector3(-global_position.x, 0.0, -global_position.z)
 			var safe_dir := to_center.normalized() if to_center.length() > 0.1 else Vector3.FORWARD
 
-			var squad_jitter: float = sin(strafe_phase * 0.45 + float(squad_id) * 1.5) * 0.22
+			var squad_jitter: float = sin(strafe_phase * 0.35 + float(squad_id) * 1.5) * 0.18
 			var run_dir: Vector3 = (safe_dir + global_transform.basis.x * squad_jitter).normalized()
 
 			if _is_wall_in_direction(run_dir, 3.2) or is_on_wall():
@@ -378,8 +386,8 @@ func _physics_process(delta: float) -> void:
 
 			var run_speed: float = 12.8
 			storm_slide_timer += delta
-			if storm_slide_timer > 3.4:
-				if storm_slide_timer < 4.3:
+			if storm_slide_timer > 3.6:
+				if storm_slide_timer < 4.4:
 					is_sliding = true
 					is_crouching = true
 					run_speed = 16.5
@@ -389,75 +397,97 @@ func _physics_process(delta: float) -> void:
 			else:
 				is_sliding = false
 
-			if is_on_floor() and (is_on_wall() or _is_wall_in_direction(run_dir, 1.6)):
-				velocity.y = 11.4
-
 			desired_vel_xz = run_dir * run_speed
 
-			if player_node != null and dist_to_player < 26.0 and has_los and not is_outside_ring:
-				var look_p := Vector3(player_node.global_position.x, global_position.y, player_node.global_position.z)
-				if global_position.distance_to(look_p) > 0.5:
-					look_at(look_p, Vector3.UP)
-				if bot_reload_timer <= 0.0 and bot_ammo > 0:
-					fire_cooldown -= delta
-					if fire_cooldown <= 0.0:
-						fire_cooldown = randf_range(1.4, 2.4)
-						_fire_burst_at_player(player_node)
-			else:
-				var forward_target := global_position + run_dir * 6.0
-				if global_position.distance_to(forward_target) > 0.5:
-					look_at(forward_target, Vector3.UP)
-
-			if is_outside_ring and hp < 35.0 and bot_syringes_left > 0 and heal_timer <= 0.0:
-				ai_state = "SEEK_COVER_HEAL"
-				active_heal_type = "syringe"
-				heal_timer = 5.0
-				bot_syringes_left -= 1
-				heal_fx_mesh.visible = true
-				_update_overhead_label()
+			var forward_target := global_position + run_dir * 6.0
+			if global_position.distance_to(forward_target) > 0.5:
+				look_at(forward_target, Vector3.UP)
 		else:
+			# =================================================================
+			# COMMITTED TACTICAL LOCOMOTION (Fixes frantic sideways crab-panning!)
+			# =================================================================
 			is_moving = true
-			if use_imit and absf(float(imit.get("move_x", 0.0))) > 0.2:
-				strafe_dir = signf(float(imit["move_x"]))
-			elif randf() < 0.025:
+			maneuver_timer -= delta
+			if maneuver_timer <= 0.0:
+				maneuver_timer = randf_range(1.9, 3.2)
 				strafe_dir = -strafe_dir
+				if ai_mode == "combat":
+					var r_pick: float = randf()
+					if r_pick < 0.42:
+						maneuver_style = "DIAGONAL_ADVANCE"
+						forward_bias = 0.58 if dist_to_player > 16.0 else -0.35
+					elif r_pick < 0.78:
+						maneuver_style = "WIDE_FLANK"
+						forward_bias = 0.32
+					else:
+						maneuver_style = "ANCHOR_PACE"
+						forward_bias = 0.18
+				else:
+					maneuver_style = "ANCHOR_PACE"
+					forward_bias = 0.28 * sin(strafe_phase * 0.5)
 
-			# Tactical combat slide-evade when taking fire or repositioning
 			if combat_slide_timer > 0.0:
 				combat_slide_timer -= delta
 				is_sliding = true
 				is_crouching = true
 			else:
 				is_sliding = false
-				if is_on_floor() and ai_mode == "combat" and randf() < 0.005:
+				if is_on_floor() and ai_mode == "combat" and maneuver_style == "DIAGONAL_ADVANCE" and randf() < 0.003:
 					combat_slide_timer = 0.68
 					is_sliding = true
 					is_crouching = true
 
 			if not is_sliding:
-				if use_imit:
-					if bool(imit.get("crouch", false)) and crouch_timer <= 0.0:
-						crouch_timer = 0.48
-				elif randf() < (0.012 + crouch_prob * 0.03) and crouch_timer <= 0.0:
-					crouch_timer = 0.55
-
 				if crouch_timer > 0.0:
 					crouch_timer -= delta
 					is_crouching = true
+				elif ai_mode == "combat" and burst_aim_timer <= 0.0 and randf() < 0.006:
+					crouch_timer = 0.52
 
-			if is_on_floor() and ((use_imit and bool(imit.get("jump", false))) or randf() < jump_prob * 0.008):
-				velocity.y = 11.4
+			# Face player smoothly, or angle 25% toward movement vector when sprinting in WIDE_FLANK
+			var fwd_to_player: Vector3 = -global_transform.basis.z
+			if player_node != null:
+				var to_p := Vector3(player_node.global_position.x - global_position.x, 0.0, player_node.global_position.z - global_position.z)
+				if to_p.length() > 0.6:
+					fwd_to_player = to_p.normalized()
+					var target_yaw: float = atan2(-fwd_to_player.x, -fwd_to_player.z)
+					rotation.y = lerp_angle(rotation.y, target_yaw, delta * 8.5)
 
-			var move_spd: float = 15.8 if is_sliding else (6.2 if is_crouching else 7.2)
-			var lat_vec: Vector3 = global_transform.basis.x * strafe_dir
-			if _is_wall_in_direction(lat_vec, 2.2) or is_on_wall():
-				strafe_dir = -strafe_dir
-				lat_vec = -lat_vec
+			var right_vec: Vector3 = global_transform.basis.x * strafe_dir
+			var fwd_vec: Vector3 = -global_transform.basis.z * forward_bias
 
+			# Keep bot near its patrol/spawn anchor in Firing Range so it doesn't wander off the platform
 			var to_spawn: Vector3 = spawn_origin - global_position
 			to_spawn.y = 0.0
-			var anchor_pull: Vector3 = to_spawn.normalized() * clampf(to_spawn.length() * 0.35, 0.0, 2.5)
-			desired_vel_xz = (lat_vec + anchor_pull * 0.35).normalized() * move_spd
+			var max_roam: float = 7.5 if ai_mode == "strafe" else 16.0
+			if to_spawn.length() > max_roam:
+				fwd_vec = to_spawn.normalized() * 0.75
+
+			var move_dir: Vector3 = (right_vec * 0.82 + fwd_vec * 0.58).normalized()
+
+			# Check if wall is ahead: either Wall-Climb over it (if combat advancing) or smoothly reverse maneuver!
+			if _is_wall_in_direction(move_dir, 1.65) or is_on_wall():
+				if ai_mode == "combat" and bot_climb_timer < 0.95 and forward_bias > 0.0:
+					bot_wall_climbing = true
+					bot_climb_timer += delta
+					bot_climb_phase += delta * 11.0
+					velocity.y = 7.8
+				else:
+					bot_wall_climbing = false
+					if maneuver_timer < 1.4:
+						strafe_dir = -strafe_dir
+						maneuver_timer = randf_range(1.8, 2.8)
+					move_dir = -move_dir
+			else:
+				bot_wall_climbing = false
+				if is_on_floor():
+					bot_climb_timer = 0.0
+
+			# Smooth speed profile: steady ADS pace (`5.2 m/s`) while firing bursts, athletic run (`8.4 m/s`) when flanking!
+			var move_spd: float = 15.8 if is_sliding else (5.2 if burst_aim_timer > 0.0 else (6.0 if is_crouching else (6.8 if ai_mode == "strafe" else 8.6)))
+			# Smooth turn-around ease when maneuver_timer is near switching
+			var turn_ease: float = clampf(minf(maneuver_timer, 2.5 - maneuver_timer) * 3.5, 0.45, 1.0)
+			desired_vel_xz = move_dir * (move_spd * turn_ease)
 
 			if ai_mode == "combat" and player_node != null and dist_to_player < 68.0 and has_los and bot_reload_timer <= 0.0 and not player_node.in_dropship and not player_node.is_skydiving:
 				fire_cooldown -= delta
@@ -467,29 +497,45 @@ func _physics_process(delta: float) -> void:
 						bot_reload_timer = float(wep_d.get("reload", 2.3))
 						_update_overhead_label()
 					else:
-						fire_cooldown = randf_range(1.05, 1.85)
+						fire_cooldown = randf_range(1.15, 1.95)
+						burst_aim_timer = 0.55
 						_fire_burst_at_player(player_node)
 
-	velocity.x = lerpf(velocity.x, desired_vel_xz.x, delta * 10.0)
-	velocity.z = lerpf(velocity.z, desired_vel_xz.z, delta * 10.0)
+	velocity.x = lerpf(velocity.x, desired_vel_xz.x, delta * 8.5)
+	velocity.z = lerpf(velocity.z, desired_vel_xz.z, delta * 8.5)
 	move_and_slide()
 
-	_animate_rig_limbs(delta, is_moving and velocity.length() > 0.5, is_crouching)
+	_animate_rig_limbs(delta, is_moving and Vector2(velocity.x, velocity.z).length() > 0.5, is_crouching)
 
 func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> void:
 	if rig_node == null:
 		return
+	# Compute local horizontal movement angle so legs/pelvis align with the bot's actual running direction!
+	var local_vel: Vector3 = global_transform.basis.inverse() * Vector3(velocity.x, 0.0, velocity.z)
+	var move_angle_local: float = 0.0
+	if Vector2(local_vel.x, local_vel.z).length() > 0.45:
+		if local_vel.z <= 0.25:
+			move_angle_local = clampf(atan2(-local_vel.x, maxf(0.15, -local_vel.z)), -0.78, 0.78)
+		else:
+			move_angle_local = clampf(atan2(local_vel.x, maxf(0.15, local_vel.z)), -0.68, 0.68)
+
 	var anim_dict := {
 		"mode": "death" if is_dying else ("crouch" if is_crouching else ("combat" if is_moving else "idle")),
 		"is_moving": is_moving,
 		"is_crouching": is_crouching,
 		"is_sliding": is_sliding,
-		"is_in_air": not is_on_floor() and not is_dying,
+		"is_in_air": not is_on_floor() and not is_dying and not bot_wall_climbing,
+		"vel_y": velocity.y,
+		"land_compress": bot_land_timer / 0.22,
+		"is_wall_climbing": bot_wall_climbing,
+		"climb_phase": bot_climb_phase,
 		"is_healing": (ai_state == "SEEK_COVER_HEAL"),
 		"heal_id": active_heal_type,
 		"is_reloading": (bot_reload_timer > 0.0),
-		"is_firing": (fire_cooldown > 0.0 and fire_cooldown < 0.22 and bot_reload_timer <= 0.0),
+		"is_firing": (burst_aim_timer > 0.25 and bot_reload_timer <= 0.0),
+		"is_ads": (burst_aim_timer > 0.0),
 		"aim_pitch": aim_pitch,
+		"move_angle_local": move_angle_local,
 		"weapon_id": bot_weapon_id,
 		"strafe_phase": strafe_phase,
 		"strafe_dir": strafe_dir,
@@ -591,7 +637,6 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 			PlayerState.killfeed_pushed.emit("⚡ 击碎了 %s 的 Lv.%d 进化护盾！" % [bot_name, evo_level], GameData.get_evo_tier(evo_level)["color"])
 			if GameData.get_legend_by_id(PlayerState.selected_legend_id)["class_id"] == "ASSAULT":
 				PlayerState.double_time_timer = 3.5
-			# AI triggers evasive combat slide when shield is cracked!
 			if is_on_floor() and ai_mode != "static":
 				combat_slide_timer = 0.65
 				is_sliding = true

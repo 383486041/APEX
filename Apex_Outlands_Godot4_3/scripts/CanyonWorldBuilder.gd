@@ -1,12 +1,89 @@
 class_name CanyonWorldBuilder
 extends RefCounted
 ## Procedurally constructs the 640x640m "New Dawn Canyon" 3D map for Godot 4.3 with:
-## - High-Detail Multi-Part Supply Bins (with StaticBody3D collision so players/bots never clip through bins,
-##   and an interior tray ready to spawn interactive 3D pickupable loot items when opened)
-## - 3-Legged Apex Pack / Loot Tick Robots (with StaticBody3D collision)
-## - 28-Weapon Armory Racks in Firing Range (covering all 7 authentic weapon classes: AR, SMG, LMG, MARKSMAN, SNIPER, SHOTGUN, PISTOL)
-## - Interactive Jump Towers / Redeploy Ziplines at POIs for Battle Royale rotation
-## - Multi-Story POI Buildings with flush doorways, rooftop parapets, and walkable exterior ramps.
+## - Procedural PBR Texture & Normal-Map Material Library (`FastNoiseLite` + `NoiseTexture2D` with Triplanar mapping)
+##   for Sandstone Cliff Rocks, Weathered Concrete Walls, Diamond-Plate Metal Floors, Corrugated Steel, and Carbon/Polymer
+## - High-Detail Multi-Part Supply Bins & 3-Legged Apex Pack / Loot Tick Robots
+## - 28-Weapon Armory Racks + Dedicated Wall-Climb & Mantle Parkour Training Tower in Firing Range
+## - Upgraded 2-Story IMC POI Buildings with Interior Mezzanine 2nd Floor, Indoor Staircase, Tactical Window Openings,
+##   Rooftop Skylights, Industrial Pipework, and Climbable Exterior Wall Ledges/Crates
+## - Sculpted Multi-Tiered Kings Canyon Sandstone Strata Cliffs & Arches.
+
+static var _noise_tex_cache: Dictionary = {}
+static var _pbr_mat_cache: Dictionary = {}
+
+static func get_procedural_normal_tex(kind: String) -> NoiseTexture2D:
+	if _noise_tex_cache.has(kind):
+		return _noise_tex_cache[kind]
+
+	var fn := FastNoiseLite.new()
+	var tex := NoiseTexture2D.new()
+	tex.width = 128
+	tex.height = 128
+	tex.seamless = true
+	tex.as_normal_map = true
+
+	match kind:
+		"sandstone":
+			fn.noise_type = FastNoiseLite.TYPE_CELLULAR
+			fn.frequency = 0.045
+			fn.fractal_type = FastNoiseLite.FRACTAL_FBM
+			fn.fractal_octaves = 3
+			fn.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+			tex.bump_strength = 12.5
+		"concrete":
+			fn.noise_type = FastNoiseLite.TYPE_PERLIN
+			fn.frequency = 0.065
+			fn.fractal_type = FastNoiseLite.FRACTAL_FBM
+			fn.fractal_octaves = 3
+			tex.bump_strength = 7.5
+		"metal_plate":
+			fn.noise_type = FastNoiseLite.TYPE_CELLULAR
+			fn.frequency = 0.11
+			fn.cellular_return_type = FastNoiseLite.RETURN_CELL_VALUE
+			tex.bump_strength = 8.0
+		"gunmetal":
+			fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+			fn.frequency = 0.14
+			fn.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+			fn.fractal_octaves = 2
+			tex.bump_strength = 4.5
+		"carbon_weave":
+			fn.noise_type = FastNoiseLite.TYPE_CELLULAR
+			fn.frequency = 0.18
+			fn.cellular_distance_function = FastNoiseLite.DISTANCE_MANHATTAN
+			tex.bump_strength = 6.5
+		"polymer_grip":
+			fn.noise_type = FastNoiseLite.TYPE_VALUE
+			fn.frequency = 0.24
+			tex.bump_strength = 9.0
+		_:
+			fn.noise_type = FastNoiseLite.TYPE_PERLIN
+			fn.frequency = 0.055
+			tex.bump_strength = 6.0
+
+	tex.noise = fn
+	_noise_tex_cache[kind] = tex
+	return tex
+
+static func _make_pbr_mat(cache_key: String, col: Color, metal: float, rough: float, normal_kind: String, triplanar: bool = true, uv_scale: float = 0.22) -> StandardMaterial3D:
+	if _pbr_mat_cache.has(cache_key):
+		return _pbr_mat_cache[cache_key]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.metallic = metal
+	m.roughness = rough
+	m.normal_enabled = true
+	m.normal_scale = 0.28
+	m.normal_texture = get_procedural_normal_tex(normal_kind)
+	if triplanar:
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3(uv_scale, uv_scale, uv_scale)
+	else:
+		m.uv1_scale = Vector3(uv_scale * 12.0, uv_scale * 12.0, uv_scale * 12.0)
+	_pbr_mat_cache[cache_key] = m
+	return m
 
 static func _make_mat(col: Color, metal: float = 0.65, rough: float = 0.35, emit: bool = false, emit_e: float = 2.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -71,10 +148,10 @@ static func create_supply_bin_node(bin_type: String = "normal") -> Node3D:
 		lid_col = Color("#0284c7")
 		led_col = Color("#38bdf8")
 
-	var mat_base := _make_mat(Color("#1e293b"), 0.78, 0.35)
-	var mat_rib := _make_mat(Color("#0f172a"), 0.85, 0.28)
+	var mat_base := _make_pbr_mat("bin_base", Color("#1e293b"), 0.80, 0.32, "metal_plate", false, 0.35)
+	var mat_rib := _make_pbr_mat("bin_rib", Color("#0f172a"), 0.86, 0.26, "gunmetal", false, 0.40)
 	var mat_hazard := _make_mat(Color("#f59e0b"), 0.45, 0.40)
-	var mat_lid := _make_mat(lid_col, 0.68, 0.30)
+	var mat_lid := _make_pbr_mat("bin_lid_" + bin_type, lid_col, 0.72, 0.28, "gunmetal", false, 0.35)
 	var mat_led := _make_mat(led_col, 0.2, 0.1, true, 3.2)
 
 	# 1. Lower Octagonal Trough Base + Structural Ribs
@@ -88,11 +165,11 @@ static func create_supply_bin_node(bin_type: String = "normal") -> Node3D:
 		_add_box(root, Vector3(0.16, 0.36, 1.46), Vector3(sx * 1.36, 0.50, 0), mat_hazard)
 		_add_cyl(root, 0.08, 0.08, 0.65, Vector3(sx * 1.38, 0.68, -0.55), mat_rib, Vector3(0.35, 0, 0), 8, "HydraulicStrut")
 
-	# Glowing Cyan/Red LED Seam Strip & Interior Loot Tray (Interactive 3D items spawn on this tray when opened!)
+	# Glowing Cyan/Red LED Seam Strip & Interior Loot Tray
 	_add_box(root, Vector3(2.68, 0.05, 1.44), Vector3(0, 0.69, 0), mat_led, Vector3.ZERO, "LedRim")
 	_add_box(root, Vector3(2.54, 0.06, 1.26), Vector3(0, 0.68, 0), mat_rib, Vector3.ZERO, "InteriorTray")
 
-	# 2. Articulated Clam-Shell Upper Lid (LidPivot at rear hinge so it swings open smoothly!)
+	# 2. Articulated Clam-Shell Upper Lid
 	var lid_pivot := Node3D.new()
 	lid_pivot.name = "LidPivot"
 	lid_pivot.position = Vector3(0, 0.72, -0.68)
@@ -122,9 +199,9 @@ static func create_loot_tick_node(tier_rarity: int = 4) -> Node3D:
 	root.add_child(col)
 
 	var glow_col := Color("#f59e0b") if tier_rarity == 4 else (Color("#ff1e42") if tier_rarity >= 5 else Color("#a855f7"))
-	var mat_shell := _make_mat(Color("#f8fafc"), 0.65, 0.25)
+	var mat_shell := _make_pbr_mat("tick_shell", Color("#f8fafc"), 0.68, 0.24, "gunmetal", false, 0.4)
 	var mat_red := _make_mat(Color("#dc2626"), 0.70, 0.28)
-	var mat_dark := _make_mat(Color("#1e293b"), 0.80, 0.32)
+	var mat_dark := _make_pbr_mat("tick_dark", Color("#1e293b"), 0.82, 0.30, "carbon_weave", false, 0.5)
 	var mat_joint := _make_mat(Color("#f59e0b"), 0.75, 0.30)
 	var mat_glow := _make_mat(glow_col, 0.2, 0.1, true, 3.8)
 
@@ -153,7 +230,7 @@ static func create_loot_tick_node(tier_rarity: int = 4) -> Node3D:
 
 	return root
 
-## Builds an Industrial Sci-Fi Cargo Crate / Cover Box
+## Builds an Industrial Sci-Fi Cargo Crate / Climbable Cover Box with PBR Metal Normal Map
 static func create_cargo_crate_node(w: float = 2.2, h: float = 1.6, d: float = 1.8, accent_col: Color = Color("#f59e0b")) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1
@@ -165,9 +242,9 @@ static func create_cargo_crate_node(w: float = 2.2, h: float = 1.6, d: float = 1
 	col.position = Vector3(0, h * 0.5, 0)
 	body.add_child(col)
 
-	var mat_main := _make_mat(Color("#273449"), 0.62, 0.42)
-	var mat_frame := _make_mat(Color("#0f172a"), 0.82, 0.28)
-	var mat_acc := _make_mat(accent_col, 0.4, 0.2, true, 2.0)
+	var mat_main := _make_pbr_mat("crate_main", Color("#273449"), 0.68, 0.38, "metal_plate", true, 0.35)
+	var mat_frame := _make_pbr_mat("crate_frame", Color("#0f172a"), 0.85, 0.26, "gunmetal", true, 0.40)
+	var mat_acc := _make_mat(accent_col, 0.4, 0.2, true, 2.2)
 
 	_add_box(body, Vector3(w, h, d), Vector3(0, h * 0.5, 0), mat_main)
 	_add_box(body, Vector3(w + 0.06, 0.14, d + 0.06), Vector3(0, h - 0.08, 0), mat_frame)
@@ -195,7 +272,7 @@ static func create_jump_tower_node() -> StaticBody3D:
 	col.position = Vector3(0, 14.0, 0)
 	tower.add_child(col)
 
-	var mat_pole := _make_mat(Color("#334155"), 0.82, 0.28)
+	var mat_pole := _make_pbr_mat("tower_pole", Color("#334155"), 0.84, 0.28, "gunmetal", true, 0.30)
 	var mat_balloon := _make_mat(Color("#dc2626"), 0.25, 0.45, true, 1.6)
 	var mat_cable := _make_mat(Color("#facc15"), 0.85, 0.20, true, 2.2)
 
@@ -218,7 +295,7 @@ static func create_jump_tower_node() -> StaticBody3D:
 static func build_canyon_world(parent: Node3D) -> Dictionary:
 	var interactables: Array = []
 
-	# Terrain Floor + StaticBody3D
+	# Terrain Floor + StaticBody3D with Procedural Triplanar Normal & Roughness Map
 	var floor_body := StaticBody3D.new()
 	floor_body.name = "CanyonTerrain"
 	floor_body.collision_layer = 1
@@ -234,19 +311,22 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 	var plane := BoxMesh.new()
 	plane.size = Vector3(640, 0.2, 640)
 	floor_mesh.mesh = plane
-	var mat_ground := StandardMaterial3D.new()
-	mat_ground.albedo_color = Color("#1a2436")
-	mat_ground.roughness = 0.88
+	var mat_ground := _make_pbr_mat("canyon_terrain_floor", Color("#1e293b"), 0.18, 0.82, "sandstone", true, 0.08)
 	floor_mesh.material_override = mat_ground
 	floor_body.add_child(floor_mesh)
 	parent.add_child(floor_body)
 
-	var mat_wall := _make_mat(Color("#334155"), 0.38, 0.52)
-	var mat_roof := _make_mat(Color("#1e293b"), 0.55, 0.40)
-	var mat_rock := _make_mat(Color("#3b312b"), 0.12, 0.88)
+	# Firing Range Concrete Tactical Deck Pad
+	var pad_mat := _make_pbr_mat("firing_range_pad", Color("#263246"), 0.55, 0.42, "metal_plate", true, 0.24)
+	_add_box(floor_body, Vector3(68.0, 0.08, 46.0), Vector3(0, 0.04, -14.0), pad_mat, Vector3.ZERO, "FiringRangeDeck")
 
-	# 1. Spawn Firing Range 28-Weapon Armory Racks (2 rows of 14 stands) + Supply Bins + Loot Ticks near spawn
-	var rack_mat := _make_mat(Color("#0f172a"), 0.78, 0.28)
+	var mat_wall := _make_pbr_mat("imc_wall", Color("#334155"), 0.35, 0.54, "concrete", true, 0.18)
+	var mat_roof := _make_pbr_mat("imc_roof", Color("#1e293b"), 0.72, 0.34, "metal_plate", true, 0.25)
+	var mat_rock := _make_pbr_mat("canyon_sandstone_cliff", Color("#523a28"), 0.12, 0.86, "sandstone", true, 0.06)
+	var mat_rock_top := _make_pbr_mat("canyon_sandstone_top", Color("#6b4c35"), 0.10, 0.88, "sandstone", true, 0.08)
+
+	# 1. Spawn Firing Range 28-Weapon Armory Racks (2 rows of 14 stands)
+	var rack_mat := _make_pbr_mat("armory_rack", Color("#0f172a"), 0.82, 0.26, "gunmetal", false, 0.4)
 	var cols_per_row: int = 14
 	for i in range(GameData.WEAPONS.size()):
 		var w: Dictionary = GameData.WEAPONS[i]
@@ -263,6 +343,7 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 		st_col.position = Vector3(0, 0.525, 0)
 		stand.add_child(st_col)
 		_add_box(stand, Vector3(2.1, 1.05, 0.88), Vector3(0, 0.525, 0), rack_mat)
+		_add_box(stand, Vector3(2.16, 0.06, 0.92), Vector3(0, 1.04, 0), _make_mat(w.get("accent", Color("#38bdf8")), 0.3, 0.2, true, 1.8))
 		stand.position = Vector3(rx, 0.0, rz)
 		parent.add_child(stand)
 
@@ -298,7 +379,10 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			"node": stand
 		})
 
-	# Spawn 3 High-Detail Supply Bins & 2 Loot Ticks right beside spawn so player can open & pick up individual items!
+	# 1B. Build Dedicated Firing Range Wall-Climb & Ledge-Mantle Training Course (East of Racks)
+	_build_climb_parkour_course(parent, Vector3(25.5, 0.0, -14.0), mat_wall, mat_roof)
+
+	# Spawn 3 High-Detail Supply Bins & 2 Loot Ticks right beside spawn
 	var spawn_bin_types := ["normal", "assault", "support"]
 	for sb in range(3):
 		var btype: String = spawn_bin_types[sb]
@@ -315,298 +399,372 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 			"opened": false
 		})
 
-	for lt in range(2):
-		var tick_node := create_loot_tick_node(5 if lt == 0 else 4)
-		tick_node.position = Vector3(6.5 + float(lt) * 3.4, 0.0, -4.5)
+	for tk in range(2):
+		var rarity: int = 4 if tk == 0 else 5
+		var tick_node := create_loot_tick_node(rarity)
+		tick_node.position = Vector3(8.5 + float(tk) * 3.4, 0.0, -4.8)
+		tick_node.rotation.y = -0.45
 		parent.add_child(tick_node)
 		interactables.append({
 			"type": "loot_tick",
-			"rarity": 5 if lt == 0 else 4,
-			"name": "开启 💎 战利品箱机器人 (爆出可拾取红甲/金枪/大电)",
+			"rarity": rarity,
+			"name": "开启 %s 战利品机器人 (爆出满配金枪/传家宝红武!)" % ("传说金色" if rarity == 4 else "神话红色"),
 			"pos": tick_node.position,
 			"node": tick_node,
 			"opened": false
 		})
 
-	# Spawn a Jump Tower near spawn for instant skyward redeploy testing
-	var spawn_tower := create_jump_tower_node()
-	spawn_tower.position = Vector3(15.5, 0.0, -5.5)
-	parent.add_child(spawn_tower)
+	for cv in range(3):
+		var crate := create_cargo_crate_node(2.6, 1.45, 1.6, Color("#38bdf8"))
+		crate.position = Vector3(-9.0 + float(cv) * 9.0, 0.0, -20.5)
+		parent.add_child(crate)
+
+	var fr_tower := create_jump_tower_node()
+	fr_tower.position = Vector3(-24.0, 0.0, -14.0)
+	parent.add_child(fr_tower)
 	interactables.append({
 		"type": "jump_tower",
-		"name": "搭乘跳伞塔高空滑翔重部署",
-		"pos": spawn_tower.position,
-		"node": spawn_tower
+		"name": "搭乘 跳伞塔高空滑索重部署 (飞向全图任意落点)",
+		"pos": fr_tower.position + Vector3(0, 1.5, 0),
+		"node": fr_tower
 	})
 
-	# Spawn tactical cover crates in the firing range duel zone
-	for c_idx in range(6):
-		var cr := create_cargo_crate_node(2.4, 1.55, 1.6, Color("#38bdf8") if c_idx % 2 == 0 else Color("#f97316"))
-		cr.position = Vector3((float(c_idx) - 2.5) * 6.2, 0.0, -19.5)
-		parent.add_child(cr)
-
-	# 2. Build 12 Named POIs across the Canyon with Buildings, Rooftop Parapets, Ramps, Supply Bins, Loot Ticks & Jump Towers
-	for poi_i in range(GameData.MAP_POIS.size()):
-		var poi: Dictionary = GameData.MAP_POIS[poi_i]
-		var p_pos: Vector2 = poi["pos"]
+	# 2. Build 12 Named POIs with Multi-Story Climbable Buildings, Supply Bins, Loot Ticks, Jump Towers, Beacons & Crafters
+	var poi_idx: int = 0
+	for poi in GameData.MAP_POIS:
+		var p2: Vector2 = poi["pos"]
+		var center := Vector3(p2.x, 0.0, p2.y)
 		var b_count: int = int(poi["buildings"])
-		var accent_mat := _make_mat(poi["color"], 0.4, 0.2, true, 1.8)
+		var col_accent: Color = poi["color"]
+		var mat_accent := _make_mat(col_accent, 0.5, 0.2, true, 2.2)
 
 		for b in range(b_count):
-			var ang: float = (float(b) / float(b_count)) * TAU
-			var dist: float = 16.0 + float(b % 2) * 8.0
-			var bx: float = p_pos.x + cos(ang) * dist
-			var bz: float = p_pos.y + sin(ang) * dist
-			var bw: float = 12.0 + float(b % 3) * 2.0
-			var bh: float = 5.2 + float(b % 2) * 2.0
-			var bd: float = 12.0 + float((b + 1) % 3) * 2.0
+			var ang: float = float(b) * (TAU / float(b_count))
+			var b_pos: Vector3 = center + Vector3(cos(ang) * 19.5, 0.0, sin(ang) * 19.5)
+			var bw: float = 11.6
+			var bh: float = 5.2
+			var bd: float = 9.6
+			_build_poi_building(parent, b_pos, Vector3(bw, bh, bd), mat_wall, mat_roof, mat_accent)
 
-			var b_root := Node3D.new()
-			b_root.position = Vector3(bx, 0.0, bz)
-			parent.add_child(b_root)
+		for cb in range(2):
+			var c_ang: float = float(cb) * PI + 0.4
+			var crate_poi := create_cargo_crate_node(2.4, 1.6, 2.0, col_accent)
+			crate_poi.position = center + Vector3(cos(c_ang) * 9.5, 0.0, sin(c_ang) * 9.5)
+			crate_poi.rotation.y = c_ang
+			parent.add_child(crate_poi)
 
-			# 1. Solid Ground Floor with Collision
-			var floor_sb := StaticBody3D.new()
-			var floor_col := CollisionShape3D.new()
-			var floor_shape := BoxShape3D.new()
-			floor_shape.size = Vector3(bw, 0.40, bd)
-			floor_col.shape = floor_shape
-			floor_col.position = Vector3(0, -0.20, 0)
-			floor_sb.add_child(floor_col)
-			_add_box(floor_sb, Vector3(bw, 0.40, bd), Vector3(0, -0.20, 0), mat_roof)
-			b_root.add_child(floor_sb)
-
-			# 2. Solid Rooftop Ceiling with Collision
-			var roof_sb := StaticBody3D.new()
-			var roof_col := CollisionShape3D.new()
-			var roof_shape := BoxShape3D.new()
-			roof_shape.size = Vector3(bw + 0.4, 0.35, bd + 0.4)
-			roof_col.shape = roof_shape
-			roof_col.position = Vector3(0, bh + 0.175, 0)
-			roof_sb.add_child(roof_col)
-			_add_box(roof_sb, Vector3(bw + 0.4, 0.35, bd + 0.4), Vector3(0, bh + 0.175, 0), mat_roof)
-			_add_box(roof_sb, Vector3(bw + 0.6, 0.25, bd + 0.6), Vector3(0, bh, 0), accent_mat)
-			b_root.add_child(roof_sb)
-
-			# 3. Rooftop Parapets
-			for p_side in [0, 1, 2, 3]:
-				if p_side == 0:
-					var p_sz := Vector3(bw, 1.05, 0.35)
-					var pw_pos := Vector3(0, bh + 0.35 + 0.525, -bd * 0.5)
-					var sb := StaticBody3D.new()
-					var col_north := CollisionShape3D.new()
-					var sh := BoxShape3D.new()
-					sh.size = p_sz
-					col_north.shape = sh
-					col_north.position = pw_pos
-					sb.add_child(col_north)
-					_add_box(sb, p_sz, pw_pos, mat_roof)
-					b_root.add_child(sb)
-				elif p_side == 1:
-					var p_sz := Vector3(bw, 1.05, 0.35)
-					var pw_pos := Vector3(0, bh + 0.35 + 0.525, bd * 0.5)
-					var sb := StaticBody3D.new()
-					var col_south := CollisionShape3D.new()
-					var sh := BoxShape3D.new()
-					sh.size = p_sz
-					col_south.shape = sh
-					col_south.position = pw_pos
-					sb.add_child(col_south)
-					_add_box(sb, p_sz, pw_pos, mat_roof)
-					b_root.add_child(sb)
-				elif p_side == 2:
-					var p_sz := Vector3(0.35, 1.05, bd)
-					var pw_pos := Vector3(-bw * 0.5, bh + 0.35 + 0.525, 0)
-					var sb := StaticBody3D.new()
-					var col_west := CollisionShape3D.new()
-					var sh := BoxShape3D.new()
-					sh.size = p_sz
-					col_west.shape = sh
-					col_west.position = pw_pos
-					sb.add_child(col_west)
-					_add_box(sb, p_sz, pw_pos, mat_roof)
-					b_root.add_child(sb)
-				else:
-					var n_len: float = maxf(0.5, bd * 0.5 - 6.3)
-					if n_len > 0.5:
-						var n_sz := Vector3(0.35, 1.05, n_len)
-						var n_pos := Vector3(bw * 0.5, bh + 0.35 + 0.525, -bd * 0.5 + n_len * 0.5)
-						var sb_n := StaticBody3D.new()
-						var col_n := CollisionShape3D.new()
-						var sh_n := BoxShape3D.new()
-						sh_n.size = n_sz
-						col_n.shape = sh_n
-						col_n.position = n_pos
-						sb_n.add_child(col_n)
-						_add_box(sb_n, n_sz, n_pos, mat_roof)
-						b_root.add_child(sb_n)
-					var s_len: float = maxf(0.5, bd * 0.5 + 3.7)
-					var s_sz := Vector3(0.35, 1.05, s_len)
-					var s_pos := Vector3(bw * 0.5, bh + 0.35 + 0.525, bd * 0.5 - s_len * 0.5)
-					var sb_s := StaticBody3D.new()
-					var col_s := CollisionShape3D.new()
-					var sh_s := BoxShape3D.new()
-					sh_s.size = s_sz
-					col_s.shape = sh_s
-					col_s.position = s_pos
-					sb_s.add_child(col_s)
-					_add_box(sb_s, s_sz, s_pos, mat_roof)
-					b_root.add_child(sb_s)
-
-			# 4. 4 Exterior Walls with 3.4m Walk-Through Doorways
-			var w_wall_sb := StaticBody3D.new()
-			var w_col := CollisionShape3D.new()
-			var w_shape := BoxShape3D.new()
-			w_shape.size = Vector3(0.4, bh, bd)
-			w_col.shape = w_shape
-			w_col.position = Vector3(-bw * 0.5 + 0.2, bh * 0.5, 0)
-			w_wall_sb.add_child(w_col)
-			_add_box(w_wall_sb, Vector3(0.4, bh, bd), Vector3(-bw * 0.5 + 0.2, bh * 0.5, 0), mat_wall)
-			b_root.add_child(w_wall_sb)
-
-			var e_wall_sb := StaticBody3D.new()
-			var e_col := CollisionShape3D.new()
-			var e_shape := BoxShape3D.new()
-			e_shape.size = Vector3(0.4, bh, bd)
-			e_col.shape = e_shape
-			e_col.position = Vector3(bw * 0.5 - 0.2, bh * 0.5, 0)
-			e_wall_sb.add_child(e_col)
-			_add_box(e_wall_sb, Vector3(0.4, bh, bd), Vector3(bw * 0.5 - 0.2, bh * 0.5, 0), mat_wall)
-			b_root.add_child(e_wall_sb)
-
-			var half_w: float = (bw - 3.4) * 0.5
-			for s in [-1.0, 1.0]:
-				var nw_sb := StaticBody3D.new()
-				var nw_col := CollisionShape3D.new()
-				var nw_shape := BoxShape3D.new()
-				nw_shape.size = Vector3(half_w, bh, 0.4)
-				nw_col.shape = nw_shape
-				var nw_pos := Vector3(s * (3.4 * 0.5 + half_w * 0.5), bh * 0.5, -bd * 0.5 + 0.2)
-				nw_col.position = nw_pos
-				nw_sb.add_child(nw_col)
-				_add_box(nw_sb, Vector3(half_w, bh, 0.4), nw_pos, mat_wall)
-				b_root.add_child(nw_sb)
-
-			var lintel_sb := StaticBody3D.new()
-			var lintel_col := CollisionShape3D.new()
-			var lintel_shape := BoxShape3D.new()
-			lintel_shape.size = Vector3(3.4, bh - 3.0, 0.4)
-			lintel_col.shape = lintel_shape
-			var lintel_pos := Vector3(0, 3.0 + (bh - 3.0) * 0.5, -bd * 0.5 + 0.2)
-			lintel_col.position = lintel_pos
-			lintel_sb.add_child(lintel_col)
-			_add_box(lintel_sb, Vector3(3.4, bh - 3.0, 0.4), lintel_pos, accent_mat)
-			b_root.add_child(lintel_sb)
-
-			for s in [-1.0, 1.0]:
-				var sw_sb := StaticBody3D.new()
-				var sw_col := CollisionShape3D.new()
-				var sw_shape := BoxShape3D.new()
-				sw_shape.size = Vector3(half_w, bh, 0.4)
-				sw_col.shape = sw_shape
-				var sw_pos := Vector3(s * (3.4 * 0.5 + half_w * 0.5), bh * 0.5, bd * 0.5 - 0.2)
-				sw_col.position = sw_pos
-				sw_sb.add_child(sw_col)
-				_add_box(sw_sb, Vector3(half_w, bh, 0.4), sw_pos, mat_wall)
-				b_root.add_child(sw_sb)
-
-			# 5. Exterior Walkable Rooftop Ramp + Solid Catwalk Landing
-			var ramp_sb := StaticBody3D.new()
-			var ramp_col := CollisionShape3D.new()
-			var ramp_shape := BoxShape3D.new()
-			var ramp_len: float = sqrt(bh * bh + 10.0 * 10.0)
-			ramp_shape.size = Vector3(2.4, 0.25, ramp_len)
-			ramp_col.shape = ramp_shape
-			var ramp_angle: float = atan2(bh, 10.0)
-			ramp_col.rotation = Vector3(-ramp_angle, 0, 0)
-			ramp_col.position = Vector3(bw * 0.5 + 1.2, bh * 0.5, 0)
-			ramp_sb.add_child(ramp_col)
-			_add_box(ramp_sb, Vector3(2.4, 0.25, ramp_len), ramp_col.position, mat_roof, ramp_col.rotation)
-			b_root.add_child(ramp_sb)
-
-			var land_sb := StaticBody3D.new()
-			var land_col := CollisionShape3D.new()
-			var land_shape := BoxShape3D.new()
-			land_shape.size = Vector3(2.4, 0.35, 2.6)
-			land_col.shape = land_shape
-			land_col.position = Vector3(bw * 0.5 + 1.2, bh + 0.175, -5.0)
-			land_sb.add_child(land_col)
-			_add_box(land_sb, Vector3(2.4, 0.35, 2.6), land_col.position, mat_roof)
-			b_root.add_child(land_sb)
-
-			var crate := create_cargo_crate_node(2.2, 1.5, 1.6, poi["color"])
-			crate.position = Vector3(bx + bw * 0.65, 0.0, bz)
-			parent.add_child(crate)
-
-		# Canyon Rock Pillars around POI perimeter
-		var rock_b := StaticBody3D.new()
-		rock_b.position = Vector3(p_pos.x - 22.0, 4.5, p_pos.y - 18.0)
-		var rock_col := CollisionShape3D.new()
-		var rock_cyl := CylinderShape3D.new()
-		rock_cyl.radius = 4.2
-		rock_cyl.height = 9.0
-		rock_col.shape = rock_cyl
-		rock_b.add_child(rock_col)
-		_add_cyl(rock_b, 3.2, 5.8, 9.0, Vector3.ZERO, mat_rock, Vector3.ZERO, 7)
-		parent.add_child(rock_b)
-
-		# 3 High-Detail Supply Bins per POI
-		for s_idx in range(3):
-			var b_kind: String = "assault" if s_idx == 0 else ("support" if s_idx == 1 else "normal")
-			var s_bin := create_supply_bin_node(b_kind)
-			s_bin.position = Vector3(p_pos.x + float(s_idx - 1) * 4.5, 0.0, p_pos.y + 5.5)
-			parent.add_child(s_bin)
+		var poi_bin_types := ["normal", "assault", "support"]
+		for pb in range(3):
+			var pb_ang: float = float(pb) * (TAU / 3.0) + 0.35
+			var pb_type: String = poi_bin_types[(poi_idx + pb) % 3]
+			var pb_node := create_supply_bin_node(pb_type)
+			pb_node.position = center + Vector3(cos(pb_ang) * 6.5, 0.0, sin(pb_ang) * 6.5)
+			pb_node.rotation.y = -pb_ang + PI * 0.5
+			parent.add_child(pb_node)
+			var pb_title: String = "红色突击补给仓" if pb_type == "assault" else ("蓝色支援补给仓" if pb_type == "support" else "标准物资补给仓")
 			interactables.append({
 				"type": "supply_bin",
-				"bin_type": b_kind,
-				"name": "开启 %s 补给仓 (生成可拾取物资)" % str(poi["name"]),
-				"pos": s_bin.position,
-				"node": s_bin,
+				"bin_type": pb_type,
+				"name": "%s · %s" % [str(poi["name"]), pb_title],
+				"pos": pb_node.position,
+				"node": pb_node,
 				"opened": false
 			})
 
-		# 1 Loot Tick per POI
-		var poi_tick := create_loot_tick_node(4)
-		poi_tick.position = Vector3(p_pos.x, 0.0, p_pos.y - 4.0)
+		var tick_rarity: int = 5 if (poi_idx % 3 == 0) else 4
+		var poi_tick := create_loot_tick_node(tick_rarity)
+		poi_tick.position = center + Vector3(2.8, 0.0, -2.8)
 		parent.add_child(poi_tick)
 		interactables.append({
 			"type": "loot_tick",
-			"rarity": 4,
-			"name": "开启 %s 战利品箱机器人" % str(poi["name"]),
+			"rarity": tick_rarity,
+			"name": "%s · %s战利品机器人" % [str(poi["name"]), "神话红光" if tick_rarity == 5 else "传说金光"],
 			"pos": poi_tick.position,
 			"node": poi_tick,
 			"opened": false
 		})
 
-		# 1 Jump Tower at every other POI
-		if poi_i % 2 == 0:
-			var jt := create_jump_tower_node()
-			jt.position = Vector3(p_pos.x + 14.0, 0.0, p_pos.y - 10.0)
-			parent.add_child(jt)
+		if poi_idx % 2 == 0:
+			var j_tower := create_jump_tower_node()
+			j_tower.position = center + Vector3(-11.0, 0.0, 11.0)
+			parent.add_child(j_tower)
 			interactables.append({
 				"type": "jump_tower",
-				"name": "搭乘 %s 跳伞塔高空重部署" % str(poi["name"]),
-				"pos": jt.position,
-				"node": jt
+				"name": "%s · 跳伞塔高空重部署" % str(poi["name"]),
+				"pos": j_tower.position + Vector3(0, 1.5, 0),
+				"node": j_tower
 			})
 
-	# Shrinking Orange Energy Ring Cylinder
-	var ring_inst := MeshInstance3D.new()
-	ring_inst.name = "ApexRingCylinder"
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 1.0
-	cyl.bottom_radius = 1.0
-	cyl.height = 140.0
-	ring_inst.mesh = cyl
-	var ring_mat := StandardMaterial3D.new()
-	ring_mat.albedo_color = Color(1.0, 0.33, 0.0, 0.22)
-	ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	ring_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	ring_mat.emission_enabled = true
-	ring_mat.emission = Color("#ff5500")
-	ring_inst.material_override = ring_mat
-	ring_inst.position = Vector3(0, 70, 0)
-	ring_inst.scale = Vector3(290, 1, 290)
-	parent.add_child(ring_inst)
+		if bool(poi["beacon"]):
+			var beacon_body := StaticBody3D.new()
+			beacon_body.collision_layer = 1
+			beacon_body.collision_mask = 0
+			var bcol := CollisionShape3D.new()
+			var bcyl := CylinderShape3D.new()
+			bcyl.radius = 0.55
+			bcyl.height = 3.2
+			bcol.shape = bcyl
+			bcol.position = Vector3(0, 1.6, 0)
+			beacon_body.add_child(bcol)
+			_add_cyl(beacon_body, 0.35, 0.55, 3.2, Vector3(0, 1.6, 0), _make_mat(Color("#38bdf8"), 0.8, 0.2, true, 2.5))
+			beacon_body.position = center + Vector3(4.0, 0.0, 4.0)
+			parent.add_child(beacon_body)
+			interactables.append({
+				"type": "beacon",
+				"name": "扫描调查信标 / 毒圈控制台 (%s)" % str(poi["name"]),
+				"pos": beacon_body.position,
+				"node": beacon_body
+			})
 
-	return {"interactables": interactables, "ring_mesh": ring_inst}
+		if bool(poi["crafter"]):
+			var crafter_body := StaticBody3D.new()
+			crafter_body.collision_layer = 1
+			crafter_body.collision_mask = 0
+			var ccol := CollisionShape3D.new()
+			var ccyl := CylinderShape3D.new()
+			ccyl.radius = 1.45
+			ccyl.height = 2.8
+			ccol.shape = ccyl
+			ccol.position = Vector3(0, 1.4, 0)
+			crafter_body.add_child(ccol)
+			_add_cyl(crafter_body, 1.3, 1.5, 2.8, Vector3(0, 1.4, 0), _make_mat(Color("#f97316"), 0.7, 0.2, true, 2.2), Vector3.ZERO, 6)
+			crafter_body.position = center + Vector3(-4.2, 0.0, -3.5)
+			parent.add_child(crafter_body)
+			interactables.append({
+				"type": "crafter",
+				"name": "使用复制器制造台 (%s)" % str(poi["name"]),
+				"pos": crafter_body.position,
+				"node": crafter_body
+			})
+
+		var banner := Label3D.new()
+		banner.text = "📍 " + str(poi["name"])
+		banner.font_size = 44
+		banner.pixel_size = 0.015
+		banner.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		banner.modulate = col_accent
+		banner.position = center + Vector3(0, 12.5, 0)
+		parent.add_child(banner)
+		poi_idx += 1
+
+	# 3. Sculpted Multi-Tiered Kings Canyon Sandstone Rock Cliffs & Strata Formations
+	for r in range(36):
+		var ang: float = float(r) * 0.62
+		var dist: float = 55.0 + float((r * 29) % 210)
+		var rpos := Vector3(cos(ang) * dist, 0.0, sin(ang) * dist)
+		if rpos.length() < 36.0:
+			continue
+		var rh: float = 7.0 + float(r % 5) * 3.8
+		var rw: float = 5.0 + float(r % 4) * 1.8
+
+		var rock_body := StaticBody3D.new()
+		rock_body.collision_layer = 1
+		rock_body.collision_mask = 0
+		var rcol := CollisionShape3D.new()
+		var rcyl := CylinderShape3D.new()
+		rcyl.radius = rw * 0.92
+		rcyl.height = rh
+		rcol.shape = rcyl
+		rcol.position = Vector3(0, rh * 0.5, 0)
+		rock_body.add_child(rcol)
+
+		# Tier 1: Wide weathered sandstone base
+		_add_cyl(rock_body, rw * 0.85, rw * 1.15, rh * 0.52, Vector3(0, rh * 0.26, 0), mat_rock, Vector3.ZERO, 7)
+		# Tier 2: Offset middle strata shelf (creates natural climbable rock ledges!)
+		_add_cyl(rock_body, rw * 0.68, rw * 0.88, rh * 0.45, Vector3(rw * 0.12, rh * 0.62, -rw * 0.08), mat_rock, Vector3(0.04, 0.5, -0.03), 7)
+		# Tier 3: Flat mesa cap rock
+		_add_cyl(rock_body, rw * 0.55, rw * 0.65, rh * 0.22, Vector3(-rw * 0.06, rh * 0.89, rw * 0.05), mat_rock_top, Vector3.ZERO, 6)
+
+		# Add a climbable lower boulder step beside every 2nd cliff so players can scale up the canyon rocks
+		if r % 2 == 0:
+			var step_h: float = 3.2
+			var step_col := CollisionShape3D.new()
+			var step_shape := BoxShape3D.new()
+			step_shape.size = Vector3(3.4, step_h, 3.0)
+			step_col.shape = step_shape
+			step_col.position = Vector3(rw * 0.95, step_h * 0.5, 0)
+			rock_body.add_child(step_col)
+			_add_box(rock_body, Vector3(3.4, step_h, 3.0), Vector3(rw * 0.95, step_h * 0.5, 0), mat_rock_top, Vector3(0, 0.25, 0))
+
+		rock_body.position = rpos
+		parent.add_child(rock_body)
+
+	# 4. Giant Glowing Orange Boundary Ring Cylinder with ShaderMaterial (`ring_energy_wall.gdshader`)
+	var ring_mesh := MeshInstance3D.new()
+	ring_mesh.name = "CanyonRingBoundaryWall"
+	var rcyl_mesh := CylinderMesh.new()
+	rcyl_mesh.top_radius = 1.0
+	rcyl_mesh.bottom_radius = 1.0
+	rcyl_mesh.height = 90.0
+	rcyl_mesh.radial_segments = 64
+	rcyl_mesh.cap_top = false
+	rcyl_mesh.cap_bottom = false
+	ring_mesh.mesh = rcyl_mesh
+
+	var ring_shader: Shader = load("res://shaders/ring_energy_wall.gdshader")
+	if ring_shader != null:
+		var smat := ShaderMaterial.new()
+		smat.shader = ring_shader
+		smat.set_shader_parameter("ring_color", Color(1.0, 0.36, 0.04, 0.32))
+		ring_mesh.material_override = smat
+	else:
+		var rmat := StandardMaterial3D.new()
+		rmat.albedo_color = Color(1.0, 0.38, 0.05, 0.24)
+		rmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		rmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		rmat.emission_enabled = true
+		rmat.emission = Color("#ff5500")
+		rmat.emission_energy_multiplier = 2.4
+		ring_mesh.material_override = rmat
+
+	ring_mesh.position = Vector3(0, 45.0, 0)
+	ring_mesh.scale = Vector3(PlayerState.ring_radius, 1.0, PlayerState.ring_radius)
+	parent.add_child(ring_mesh)
+
+	return {
+		"interactables": interactables,
+		"ring_mesh": ring_mesh
+	}
+
+
+static func _build_climb_parkour_course(parent: Node3D, origin: Vector3, mat_wall: Material, mat_roof: Material) -> void:
+	## Dedicated Firing Range Wall-Climb & Ledge-Mantle Training Structure:
+	## Features a 3.2m Low Ledge, 4.8m Medium Climb Wall, and 6.2m High Apex Climb Tower with glowing climb chevrons!
+	var course := StaticBody3D.new()
+	course.name = "WallClimbTrainingTower"
+	course.collision_layer = 1
+	course.collision_mask = 0
+	course.position = origin
+	parent.add_child(course)
+
+	var mat_chevron := _make_mat(Color("#f59e0b"), 0.3, 0.2, true, 2.8)
+	var mat_cyan := _make_mat(Color("#38bdf8"), 0.3, 0.2, true, 3.0)
+
+	# 1. Stage 1 Ledge (Height = 3.0m)
+	_add_static_box_part(course, Vector3(4.6, 3.0, 4.2), Vector3(-5.2, 1.5, 0.0), mat_wall)
+	_add_box(course, Vector3(4.7, 0.14, 4.3), Vector3(-5.2, 3.02, 0.0), mat_roof)
+	_add_box(course, Vector3(2.4, 0.12, 0.08), Vector3(-5.2, 2.85, 2.14), mat_cyan)
+
+	# 2. Stage 2 Wall-Climb Platform (Height = 4.8m — standard single climb & mantle)
+	_add_static_box_part(course, Vector3(5.2, 4.8, 4.8), Vector3(0.0, 2.4, 0.0), mat_wall)
+	_add_box(course, Vector3(5.3, 0.16, 4.9), Vector3(0.0, 4.82, 0.0), mat_roof)
+	for ch in range(4):
+		_add_box(course, Vector3(1.8, 0.10, 0.08), Vector3(0.0, 1.2 + float(ch) * 1.0, 2.44), mat_chevron)
+
+	# 3. Stage 3 High Tower (Height = 6.2m — full Apex climb height / wall-bounce wall)
+	_add_static_box_part(course, Vector3(5.2, 6.2, 5.2), Vector3(5.6, 3.1, 0.0), mat_wall)
+	_add_box(course, Vector3(5.3, 0.16, 5.3), Vector3(5.6, 6.22, 0.0), mat_roof)
+	for ch2 in range(5):
+		_add_box(course, Vector3(1.8, 0.10, 0.08), Vector3(5.6, 1.2 + float(ch2) * 1.05, 2.64), mat_cyan)
+
+	var sign_lbl := Label3D.new()
+	sign_lbl.text = "🧗 爬墙与翻越训练台 (贴墙按住 W 向上攀爬 / 登顶自动双手撑地翻越 / 爬墙中松W按空格蹬墙跳)"
+	sign_lbl.font_size = 24
+	sign_lbl.pixel_size = 0.0042
+	sign_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sign_lbl.modulate = Color("#38bdf8")
+	sign_lbl.position = Vector3(0.0, 7.3, 1.5)
+	course.add_child(sign_lbl)
+
+
+static func _build_poi_building(parent: Node3D, b_pos: Vector3, sz: Vector3, mat_wall: Material, mat_roof: Material, mat_accent: Material) -> void:
+	## Builds a Multi-Story Enterable 2-Floor Apex Legends IMC Building:
+	## - Flush ground floor diamond-plate deck (`y = 0.04`)
+	## - Interior 2nd-floor Mezzanine Balcony (`y = 2.55`) with indoor staircase
+	## - Side wall tactical windows (`East` & `West`) + Front/Back walk-in doorways
+	## - Rooftop Skylight Opening (`y = 5.2m`), Parapet Cover Walls, Exterior Stair Ramp,
+	##   and Climbable Wall-Side HVAC / Cargo Units so players & bots can climb onto the roof from any side!
+	var b_root := StaticBody3D.new()
+	b_root.name = "EnterableBuilding"
+	b_root.collision_layer = 1
+	b_root.collision_mask = 0
+	b_root.position = b_pos
+	parent.add_child(b_root)
+
+	var bw: float = sz.x
+	var bh: float = sz.y
+	var bd: float = sz.z
+	var wt: float = 0.36
+	var door_w: float = 3.2
+	var door_h: float = 3.1
+	var side_w: float = (bw - door_w) * 0.5
+
+	var mat_floor := _make_pbr_mat("bldg_metal_floor", Color("#1e293b"), 0.78, 0.34, "metal_plate", true, 0.28)
+	var mat_pipe := _make_pbr_mat("bldg_pipe", Color("#475569"), 0.88, 0.22, "gunmetal", false, 0.4)
+	var mat_light := _make_mat(Color("#e0f2fe"), 0.1, 0.1, true, 3.2)
+
+	# 1. Ground Floor Diamond-Plate Deck (Flush at y = 0.04)
+	_add_static_box_part(b_root, Vector3(bw, 0.08, bd), Vector3(0, 0.04, 0), mat_floor)
+
+	# 2. Interior 2nd-Floor Mezzanine Platform (Back half of building at y = 2.55m) + Indoor Staircase
+	var mezz_d: float = bd * 0.44
+	var mezz_z: float = -bd * 0.5 + mezz_d * 0.5 + wt
+	_add_static_box_part(b_root, Vector3(bw - wt * 2.0, 0.22, mezz_d), Vector3(0, 2.55, mezz_z), mat_floor)
+	# Mezzanine safety railing with center gap for indoor stairs
+	_add_static_box_part(b_root, Vector3(bw * 0.32, 0.85, 0.16), Vector3(-bw * 0.28, 3.05, mezz_z + mezz_d * 0.5), mat_roof)
+	_add_static_box_part(b_root, Vector3(bw * 0.32, 0.85, 0.16), Vector3(bw * 0.28, 3.05, mezz_z + mezz_d * 0.5), mat_roof)
+	# Indoor Staircase connecting Ground Floor to 2nd-Floor Mezzanine
+	_add_static_box_part(b_root, Vector3(1.95, 0.24, 4.4), Vector3(-bw * 0.22, 1.28, mezz_z + mezz_d * 0.5 + 1.65), mat_floor, Vector3(0.54, 0, 0))
+
+	# 3. Roof Ceiling Slab with Walk-Through Rooftop Skylight Access (so 2nd-floor or climbers can drop in/out)
+	var roof_side_w: float = (bw - 2.8) * 0.5
+	_add_static_box_part(b_root, Vector3(roof_side_w, 0.32, bd + 0.3), Vector3(-(bw * 0.5 - roof_side_w * 0.5), bh, 0), mat_roof)
+	_add_static_box_part(b_root, Vector3(roof_side_w, 0.32, bd + 0.3), Vector3((bw * 0.5 - roof_side_w * 0.5), bh, 0), mat_roof)
+	_add_static_box_part(b_root, Vector3(2.8, 0.32, (bd - 2.6) * 0.5), Vector3(0, bh, -bd * 0.36), mat_roof)
+	_add_static_box_part(b_root, Vector3(2.8, 0.32, (bd - 2.6) * 0.5), Vector3(0, bh, bd * 0.36), mat_roof)
+
+	# 4. Front Wall (+Z) & Back Wall (-Z) with Open Walk-In Doorways
+	for z_sign in [-1.0, 1.0]:
+		var wz: float = z_sign * (bd * 0.5 - wt * 0.5)
+		_add_static_box_part(b_root, Vector3(side_w, bh, wt), Vector3(-(bw * 0.5 - side_w * 0.5), bh * 0.5, wz), mat_wall)
+		_add_static_box_part(b_root, Vector3(side_w, bh, wt), Vector3((bw * 0.5 - side_w * 0.5), bh * 0.5, wz), mat_wall)
+		var lintel_h: float = bh - door_h
+		_add_static_box_part(b_root, Vector3(door_w, lintel_h, wt), Vector3(0, door_h + lintel_h * 0.5, wz), mat_wall)
+		# Glowing Doorway Frame Trim
+		_add_box(b_root, Vector3(door_w + 0.24, 0.14, wt + 0.08), Vector3(0, door_h + 0.05, wz), mat_accent)
+		_add_box(b_root, Vector3(0.14, door_h, wt + 0.08), Vector3(-door_w * 0.5 - 0.06, door_h * 0.5, wz), mat_accent)
+		_add_box(b_root, Vector3(0.14, door_h, wt + 0.08), Vector3(door_w * 0.5 + 0.06, door_h * 0.5, wz), mat_accent)
+
+	# 5. Left Wall (-X) & Right Wall (+X) with Tactical Sightline Windows
+	var win_w: float = 2.8
+	var win_h: float = 1.35
+	var win_y: float = 1.85
+	var wall_seg_d: float = (bd - wt * 2.0 - win_w) * 0.5
+	for x_sign in [-1.0, 1.0]:
+		var wx: float = x_sign * (bw * 0.5 - wt * 0.5)
+		_add_static_box_part(b_root, Vector3(wt, bh, wall_seg_d), Vector3(wx, bh * 0.5, -(win_w * 0.5 + wall_seg_d * 0.5)), mat_wall)
+		_add_static_box_part(b_root, Vector3(wt, bh, wall_seg_d), Vector3(wx, bh * 0.5, (win_w * 0.5 + wall_seg_d * 0.5)), mat_wall)
+		# Below window & above window
+		_add_static_box_part(b_root, Vector3(wt, win_y - win_h * 0.5, win_w), Vector3(wx, (win_y - win_h * 0.5) * 0.5, 0), mat_wall)
+		var top_h: float = bh - (win_y + win_h * 0.5)
+		_add_static_box_part(b_root, Vector3(wt, top_h, win_w), Vector3(wx, bh - top_h * 0.5, 0), mat_wall)
+		# Window Sill Trim
+		_add_box(b_root, Vector3(wt + 0.10, 0.10, win_w + 0.16), Vector3(wx, win_y - win_h * 0.5, 0), mat_roof)
+
+	# 6. Interior Ceiling Lighting Fixtures & Industrial Pipe Conduits
+	_add_box(b_root, Vector3(3.6, 0.08, 0.35), Vector3(0, bh - 0.22, 1.8), mat_light)
+	_add_cyl(b_root, 0.11, 0.11, bw - 0.8, Vector3(0, bh - 0.35, -1.2), mat_pipe, Vector3(0, 0, PI * 0.5), 10)
+
+	# 7. Rooftop Tactical Parapet Cover & Neon Trim
+	_add_box(b_root, Vector3(bw + 0.4, 0.18, bd + 0.4), Vector3(0, bh + 0.12, 0), mat_accent)
+	_add_static_box_part(b_root, Vector3(bw * 0.65, 1.15, 0.35), Vector3(0, bh + 0.65, bd * 0.5 - 0.2), mat_wall)
+	_add_static_box_part(b_root, Vector3(bw * 0.65, 1.15, 0.35), Vector3(0, bh + 0.65, -bd * 0.5 + 0.2), mat_wall)
+
+	# 8. Walkable Exterior Roof Access Ramp (+X side) AND Climbable HVAC Box (-X side) for Wall-Climb & Mantle!
+	var ramp_len: float = sqrt(bd * bd + bh * bh)
+	var ramp_pitch: float = atan2(bh, bd)
+	_add_static_box_part(b_root, Vector3(2.2, 0.30, ramp_len), Vector3(bw * 0.5 + 1.2, bh * 0.5, 0.0), mat_roof, Vector3(ramp_pitch, 0, 0))
+	# Exterior HVAC Climb Box on -X wall (y = 2.4m step + climbable wall face with chevron stripes)
+	_add_static_box_part(b_root, Vector3(1.8, 2.4, 2.6), Vector3(-bw * 0.5 - 0.95, 1.2, -1.8), mat_roof)
+	_add_box(b_root, Vector3(0.08, 0.14, 2.2), Vector3(-bw * 0.5 - 0.04, 3.8, -1.8), mat_accent)
+
+
+static func _add_static_box_part(body: StaticBody3D, sz: Vector3, pos: Vector3, mat: Material, rot: Vector3 = Vector3.ZERO) -> void:
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = sz
+	col.shape = shape
+	col.position = pos
+	col.rotation = rot
+	body.add_child(col)
+	_add_box(body, sz, pos, mat, rot)
