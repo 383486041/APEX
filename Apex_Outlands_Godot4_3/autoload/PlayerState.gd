@@ -5,15 +5,24 @@ extends Node
 
 signal state_updated
 signal evo_leveled_up(new_level: int, tier_name: String)
+@warning_ignore("unused_signal")
 signal killfeed_pushed(msg: String, col: Color)
 signal toast_pushed(msg: String, kind: String)
+@warning_ignore("unused_signal")
 signal hit_feedback_pushed(target_name: String, single_dmg: int, cumulative_dmg: int, is_headshot: bool, shield_tier: int, cracked_now: bool)
+@warning_ignore("unused_signal")
 signal shotgun_pellet_feedback_pushed(pattern_name: String, hit_mask: Array, is_headshot: bool)
+@warning_ignore("unused_signal")
 signal enemy_knocked_down(victim_name: String, weapon_name: String, damage_inflicted: int, xp_bonus: int)
+@warning_ignore("unused_signal")
 signal enemy_eliminated(victim_name: String, weapon_name: String, total_kills: int)
+@warning_ignore("unused_signal")
 signal floating_damage_spawned(pos: Vector3, dmg: int, is_headshot: bool, shield_tier: int, cracked: bool)
+@warning_ignore("unused_signal")
 signal deathbox_spawn_requested(pos: Vector3, bot_name: String, evo_tier: int, weapon_name: String)
+@warning_ignore("unused_signal")
 signal deathbox_opened(dbox_data: Dictionary)
+@warning_ignore("unused_signal")
 signal match_victory_achieved(stats: Dictionary)
 
 var selected_legend_id: String = "valkyrie"
