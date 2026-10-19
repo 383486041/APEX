@@ -10,7 +10,7 @@ extends Node
 ## - Footsteps, Supply Bin hydraulic hiss, Door actuation, Armor/Flesh hits, and Glass-Shatter + Arc Shield Crack.
 
 const SAMPLE_RATE: int = 44100
-const NUM_CHANNELS: int = 8
+const NUM_CHANNELS: int = 16
 
 var channels: Array[AudioStreamPlayer] = []
 var heal_channel: AudioStreamPlayer
@@ -25,44 +25,44 @@ var wav_cache: Dictionary = {}
 var sfx_cache: Dictionary = {}
 
 const SOUND_MAP: Dictionary = {
-	# Assault Rifles
-	"r301": "res://assets/sounds/1_Guns/Assault_Rifles/R301_Carbine/Spray.mp3",
-	"flatline": "res://assets/sounds/1_Guns/Assault_Rifles/VK47_Flatline/Spray.mp3",
-	"hemlok": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Burst Shot.mp3",
-	"havoc": "res://assets/sounds/1_Guns/Assault_Rifles/Havoc_Rifle/Spray.mp3",
+	# Assault Rifles - Authentic Crisp Single Shots
+	"r301": "res://assets/sounds/1_Guns/Assault_Rifles/R301_Carbine/Single Shot.mp3",
+	"flatline": "res://assets/sounds/1_Guns/Assault_Rifles/VK47_Flatline/Single Shot.mp3",
+	"hemlok": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Single Shot.mp3",
+	"havoc": "res://assets/sounds/1_Guns/Assault_Rifles/Havoc_Rifle/Single Shot.mp3",
 	"g7": "res://assets/sounds/1_Guns/Assault_Rifles/G7_Scout/Shot.mp3",
-	"nemesis": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Burst Shot.mp3",
+	"nemesis": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Single Shot.mp3",
 
-	# SMGs
-	"r99": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Spray.mp3",
-	"volt": "res://assets/sounds/1_Guns/SMGs/Volt_SMG/Spray.mp3",
-	"alternator": "res://assets/sounds/1_Guns/SMGs/Alternator/Spray.mp3",
-	"prowler": "res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Burst Shot.mp3",
-	"car": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Spray.mp3",
+	# SMGs - Authentic Crisp Single Shots
+	"r99": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Single Shot.mp3",
+	"volt": "res://assets/sounds/1_Guns/SMGs/Volt_SMG/Single Shot.mp3",
+	"alternator": "res://assets/sounds/1_Guns/SMGs/Alternator/Single Shot.mp3",
+	"prowler": "res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Single Shot.mp3",
+	"car": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Single Shot.mp3",
 
-	# Snipers & Marksman
-	"kraber": "res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Shot with Chamber.mp3",
-	"sentinel": "res://assets/sounds/1_Guns/Snipers/Sentinel/Shot with Chamber.mp3",
+	# Snipers & Marksman - High Caliber Thunder Shots
+	"kraber": "res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Shot without Chamber.mp3",
+	"sentinel": "res://assets/sounds/1_Guns/Snipers/Sentinel/Shot.mp3",
 	"chargerifle": "res://assets/sounds/1_Guns/Snipers/Charge_Rifle/Shot.mp3",
 	"longbow": "res://assets/sounds/1_Guns/Snipers/Longbow_DMR/Shot.mp3",
 	"tripletake": "res://assets/sounds/1_Guns/Snipers/Triple_Take/Shot.mp3",
 	"repeater3030": "res://assets/sounds/1_Guns/Snipers/Longbow_DMR/Shot.mp3",
 
-	# Shotguns
+	# Shotguns - Punchy Blast Shots
 	"peacekeeper": "res://assets/sounds/1_Guns/Shotguns/Peacekeeper/Shot.mp3",
 	"mastiff": "res://assets/sounds/1_Guns/Shotguns/Mastiff/Shot.mp3",
 	"eva8": "res://assets/sounds/1_Guns/Shotguns/Eva8_Auto/Shot.mp3",
 	"mozambique": "res://assets/sounds/1_Guns/Shotguns/Mozambique/Shot.mp3",
 
-	# LMGs
-	"devotion": "res://assets/sounds/1_Guns/LMGs/Devotion_LMG/Spray.mp3",
-	"spitfire": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Spray.mp3",
-	"lstar": "res://assets/sounds/1_Guns/LMGs/LStar_EMG/Short Spray.mp3",
-	"rampage": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Spray.mp3",
+	# LMGs - Authentic Heavy Single Shots
+	"devotion": "res://assets/sounds/1_Guns/LMGs/Devotion_LMG/Single Shot.mp3",
+	"spitfire": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Single Shot.mp3",
+	"lstar": "res://assets/sounds/1_Guns/LMGs/LStar_EMG/Single Shot.mp3",
+	"rampage": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Single Shot.mp3",
 
-	# Pistols
+	# Pistols - Snappy Shots
 	"wingman": "res://assets/sounds/1_Guns/Pistols/Wingman/Shot.mp3",
-	"re45": "res://assets/sounds/1_Guns/Pistols/RE45_Auto/Spray.mp3",
+	"re45": "res://assets/sounds/1_Guns/Pistols/RE45_Auto/Single Shot.mp3",
 	"p2020": "res://assets/sounds/1_Guns/Pistols/P2020/Shot.mp3",
 
 	# Combat Feedback & HUD
@@ -163,6 +163,21 @@ func _ready() -> void:
 	add_child(voice_channel)
 
 	_prebake_core_soundbank()
+	_preload_authentic_soundbank()
+
+func _preload_authentic_soundbank() -> void:
+	for key: String in SOUND_MAP:
+		var path: String = SOUND_MAP[key]
+		if ResourceLoader.exists(path):
+			var s: AudioStream = load(path)
+			if s != null:
+				sfx_cache[key] = s
+	for key: String in GRENADE_SOUNDS:
+		var path: String = GRENADE_SOUNDS[key]
+		if ResourceLoader.exists(path):
+			var s: AudioStream = load(path)
+			if s != null:
+				sfx_cache[key] = s
 
 func get_sfx(key: String) -> AudioStream:
 	if sfx_cache.has(key):
@@ -399,13 +414,13 @@ func play_gunshot(cat: String, wid: String = "") -> void:
 	var s: AudioStream = get_sfx(wid)
 	if s != null:
 		var pitch: float = randf_range(0.97, 1.03)
-		var vol: float = -1.0
+		var vol: float = 0.0
 		if cat == "SNIPER":
-			vol = 1.0
+			vol = 2.0
 		elif cat == "SHOTGUN":
-			vol = 0.5
+			vol = 1.0
 		elif cat == "SMG":
-			vol = -2.0
+			vol = -1.0
 		_play_stream(s, pitch, vol)
 		return
 

@@ -20,6 +20,10 @@ run/main_scene="res://scenes/MainLobby.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
+[audio]
+
+general/output_latency=15
+
 [autoload]
 
 GameData="*res://autoload/GameData.gd"
