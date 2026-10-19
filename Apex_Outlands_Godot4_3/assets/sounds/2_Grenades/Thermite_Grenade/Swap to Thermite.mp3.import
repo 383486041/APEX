@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c2rfs23oro0ht"
+path="res://.godot/imported/Swap to Thermite.mp3-91a454f6a5b302bd1fdc2170989decf0.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Thermite_Grenade/Swap to Thermite.mp3"
+dest_files=["res://.godot/imported/Swap to Thermite.mp3-91a454f6a5b302bd1fdc2170989decf0.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

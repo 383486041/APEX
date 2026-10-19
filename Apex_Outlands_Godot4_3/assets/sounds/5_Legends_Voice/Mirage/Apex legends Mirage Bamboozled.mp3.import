@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://xyaevy0axkv0"
+path="res://.godot/imported/Apex legends Mirage Bamboozled.mp3-454e1beb2b0626aa16302854351e7442.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Mirage/Apex legends Mirage Bamboozled.mp3"
+dest_files=["res://.godot/imported/Apex legends Mirage Bamboozled.mp3-454e1beb2b0626aa16302854351e7442.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

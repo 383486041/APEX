@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cmrpgx8f0mvkl"
+path="res://.godot/imported/Stow Thermite.mp3-2ce4116cab975ac9ff4de549cb219517.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Thermite_Grenade/Stow Thermite.mp3"
+dest_files=["res://.godot/imported/Stow Thermite.mp3-2ce4116cab975ac9ff4de549cb219517.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

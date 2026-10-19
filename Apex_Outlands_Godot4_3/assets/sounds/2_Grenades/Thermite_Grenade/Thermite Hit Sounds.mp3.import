@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://0eo8d6vjliho"
+path="res://.godot/imported/Thermite Hit Sounds.mp3-54c6e5146a82d20a5ae260bc1c06aefc.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Thermite_Grenade/Thermite Hit Sounds.mp3"
+dest_files=["res://.godot/imported/Thermite Hit Sounds.mp3-54c6e5146a82d20a5ae260bc1c06aefc.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

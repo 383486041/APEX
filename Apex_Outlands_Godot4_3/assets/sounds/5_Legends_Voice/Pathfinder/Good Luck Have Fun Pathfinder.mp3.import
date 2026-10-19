@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bvkttqm1ywy3t"
+path="res://.godot/imported/Good Luck Have Fun Pathfinder.mp3-f6d0cfee0951407b238de6c65e7fc5bd.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Pathfinder/Good Luck Have Fun Pathfinder.mp3"
+dest_files=["res://.godot/imported/Good Luck Have Fun Pathfinder.mp3-f6d0cfee0951407b238de6c65e7fc5bd.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

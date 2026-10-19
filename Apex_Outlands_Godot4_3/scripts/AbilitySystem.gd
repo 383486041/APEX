@@ -407,11 +407,13 @@ func use_tactical() -> void:
 	match lid:
 		"wraith":
 			AudioSynthesizer.play_ability("void")
+			AudioSynthesizer.play_legend_voice("wraith")
 			PlayerState.void_timer = 4.0
 			_spawn_phase_step_wisp(player.global_position + Vector3(0, 1.0, 0), Color("#8b5cf6"))
 			PlayerState.toast_pushed.emit("🌀 【踏入虚空】：进入跨维度虚空通道 4 秒，免疫伤害且移速 +32%！", "evo")
 		"octane":
 			AudioSynthesizer.play_ability("stim")
+			AudioSynthesizer.play_legend_voice("octane")
 			var hp_cost: float = 8.0 if PlayerState.chosen_upgrades.get("lv2", "") == "o_2a" else 12.0
 			PlayerState.hp = maxf(1.0, PlayerState.hp - hp_cost)
 			PlayerState.stim_timer = 6.0
@@ -431,6 +433,7 @@ func use_tactical() -> void:
 				PlayerState.ult_charge = minf(100.0, PlayerState.ult_charge + 20.0)
 			PlayerState.toast_pushed.emit("👁️ 【上帝之眼】：声呐脉冲已透视锁定 %d 名敌方目标！" % count, "evo")
 		"pathfinder":
+			AudioSynthesizer.play_legend_voice("pathfinder")
 			var desired_hook: Vector3 = origin + fwd * 32.0
 			var hook_pt: Vector3 = _raycast_clamp_position(origin, desired_hook, 0.5)
 			hook_pt.y = maxf(3.5, hook_pt.y)
@@ -439,10 +442,12 @@ func use_tactical() -> void:
 			PlayerState.toast_pushed.emit("🪝 【机械钩爪】：抓钩已锚定！摆锤高速弹射飞跃！", "evo")
 		"lifeline":
 			AudioSynthesizer.play_evo_level_up()
+			AudioSynthesizer.play_legend_voice("lifeline")
 			_spawn_doc_drone(player.global_position + Vector3(fwd.x * 2.0, 1.25, fwd.z * 2.0))
 			PlayerState.toast_pushed.emit("➕ 【D.O.C. 治疗无人机】：已展开医疗力场与治疗光束，持续恢复生命与护盾！", "evo")
 		"gibraltar":
 			AudioSynthesizer.play_ability("void")
+			AudioSynthesizer.play_legend_voice("gibraltar")
 			_spawn_dome_shield(player.global_position)
 			PlayerState.toast_pushed.emit("🛡️ 【保护圆顶】：6.5m 蜂巢能量力场已展开，阻挡一切火力 12 秒！", "evo")
 		"bangalore":
@@ -468,10 +473,12 @@ func use_tactical() -> void:
 			PlayerState.toast_pushed.emit("🚀 【导弹群】：12 枚制导微型火箭弹已从肩部发射覆盖目标网格！", "evo")
 		"caustic":
 			AudioSynthesizer.play_ability("void")
+			AudioSynthesizer.play_legend_voice("caustic")
 			_spawn_nox_gas_trap(target_ground, 8.5, 12.5)
 			PlayerState.toast_pushed.emit("☣️ 【夜神毒气陷阱】：充气毒气罐已部署并释放腐蚀性夜神绿雾！", "evo")
 		"mirage":
 			AudioSynthesizer.play_ability("scan")
+			AudioSynthesizer.play_legend_voice("mirage")
 			_spawn_mirage_decoy(player.global_position, fwd)
 			PlayerState.toast_pushed.emit("🎭 【疯猫全息诱饵】：动态全息奔跑诱饵已派出吸引火力！", "evo")
 
@@ -638,7 +645,7 @@ func throw_ordnance() -> void:
 	var raw_target: Vector3 = player.global_position + Vector3(fwd.x, 0, fwd.z).normalized() * 20.0 + Vector3(0, 0.5, 0)
 	var target_pos: Vector3 = _raycast_clamp_position(origin, raw_target, 0.6)
 	target_pos.y = maxf(0.4, _raycast_ground_height(target_pos) + 0.4)
-	AudioSynthesizer.play_melee_Whoosh(true)
+	AudioSynthesizer.play_grenade("arc_star", "throw")
 	PlayerState.toast_pushed.emit("✦ 已投掷【%s】！" % oid, "info")
 
 	# 3D Shuriken / Ordnance Projectile
@@ -670,7 +677,7 @@ func throw_ordnance() -> void:
 	tw.tween_callback(func():
 		if is_instance_valid(proj):
 			proj.queue_free()
-		AudioSynthesizer.play_gunshot("SNIPER", "kraber")
+		AudioSynthesizer.play_grenade("arc_star", "detonation")
 		_spawn_explosion_vfx(target_pos, Color("#38bdf8"), 5.5)
 		for bot in enemies:
 			if is_instance_valid(bot) and bot.hp > 0.0 and bot.global_position.distance_to(target_pos) <= 12.0:

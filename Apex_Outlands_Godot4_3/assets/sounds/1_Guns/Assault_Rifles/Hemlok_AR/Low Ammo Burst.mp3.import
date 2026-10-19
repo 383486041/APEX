@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ceplwoocab4md"
+path="res://.godot/imported/Low Ammo Burst.mp3-7ad3e92c29631d2d3002f331bc215b97.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Low Ammo Burst.mp3"
+dest_files=["res://.godot/imported/Low Ammo Burst.mp3-7ad3e92c29631d2d3002f331bc215b97.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

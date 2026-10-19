@@ -173,30 +173,28 @@ func rebuild_viewmodel() -> void:
 	_update_body_perspective()
 
 func _update_body_perspective() -> void:
-	if player_body_rig == null:
-		return
-	var head_node: Node3D = player_body_rig.find_child("NeckPivot", true, false)
-	var chest_node: Node3D = player_body_rig.find_child("ChestBoneAttachment", true, false)
-	var wep_mesh: Node3D = player_body_rig.find_child("HeldWeaponRoot", true, false)
-	var heirloom_mesh: Node3D = player_body_rig.find_child("HeldHeirloomRoot", true, false)
-	var back_wep: Node3D = player_body_rig.find_child("BackHolsterRoot", true, false)
-	var is_holstered: bool = (PlayerState.active_slot == 2 or PlayerState.heal_cast_timer > 0.0 or is_wall_climbing or is_mantling)
-	var show_tp_heirloom: bool = (PlayerState.active_slot == 2 and PlayerState.heal_cast_timer <= 0.0 and not is_wall_climbing and not is_mantling)
-	# Unified 1st-Person & 3rd-Person Full-Body Skinned Model (`统一第一人称和第三人称模型`):
-	# `player_body_rig` (`UALCharacterModel`) is ALWAYS visible in both 1st-person and 3rd-person,
-	# while `viewmodel_holder` stays hidden so both perspectives share the exact same hands, weapon, and reload!
-	player_body_rig.visible = true
-	viewmodel_holder.visible = false
-	if head_node:
-		head_node.visible = is_third_person
-	if chest_node:
-		chest_node.visible = is_third_person
-	if wep_mesh:
-		wep_mesh.visible = not is_holstered
-	if heirloom_mesh:
-		heirloom_mesh.visible = show_tp_heirloom
-	if back_wep:
-		back_wep.visible = is_third_person and is_holstered
+	if is_third_person:
+		if is_instance_valid(player_body_rig):
+			player_body_rig.visible = true
+			var head_node: Node3D = player_body_rig.find_child("NeckPivot", true, false)
+			var chest_node: Node3D = player_body_rig.find_child("ChestBoneAttachment", true, false)
+			var wep_mesh: Node3D = player_body_rig.find_child("HeldWeaponRoot", true, false)
+			var heirloom_mesh: Node3D = player_body_rig.find_child("HeldHeirloomRoot", true, false)
+			var back_wep: Node3D = player_body_rig.find_child("BackHolsterRoot", true, false)
+			var is_holstered: bool = (PlayerState.active_slot == 2 or PlayerState.heal_cast_timer > 0.0 or is_wall_climbing or is_mantling)
+			var show_tp_heirloom: bool = (PlayerState.active_slot == 2 and PlayerState.heal_cast_timer <= 0.0 and not is_wall_climbing and not is_mantling)
+			if head_node: head_node.visible = true
+			if chest_node: chest_node.visible = true
+			if wep_mesh: wep_mesh.visible = not is_holstered
+			if heirloom_mesh: heirloom_mesh.visible = show_tp_heirloom
+			if back_wep: back_wep.visible = is_holstered
+		if is_instance_valid(viewmodel_holder):
+			viewmodel_holder.visible = false
+	else:
+		if is_instance_valid(player_body_rig):
+			player_body_rig.visible = false
+		if is_instance_valid(viewmodel_holder):
+			viewmodel_holder.visible = true
 
 func add_camera_recoil(v_kick: float, h_kick: float, shake: float = 0.015) -> void:
 	recoil_pitch += v_kick
@@ -254,6 +252,9 @@ func _input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			is_ads = mb.pressed and PlayerState.heal_cast_timer <= 0.0 and not is_wall_climbing and not is_mantling
+		elif mb.button_index == MOUSE_BUTTON_MIDDLE and mb.pressed:
+			AudioSynthesizer.play_ping()
+			PlayerState.toast_pushed.emit("📍 轮盘标点：敌军方位已标记！", Color("#38bdf8"))
 		if mb.pressed and (mb.button_index == MOUSE_BUTTON_LEFT or mb.button_index == MOUSE_BUTTON_RIGHT):
 			if mb.position.x < 1320 or mb.position.y > 90:
 				if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
@@ -714,12 +715,12 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, sprinting: bool, c
 	var cur_wid: String = str(cur_slot_d.get("weapon_id", "r301"))
 	var is_moving_ground: bool = (input_dir.length() > 0.1 or horiz_vel.length() > 0.55) and is_on_floor() and not is_sliding
 
-	# 1. Always animate unified `player_body_rig` FIRST (in BOTH 1st-person and 3rd-person!)
-	if player_body_rig != null:
-		_update_body_perspective()
+	# 1. Animate character body rig in 3rd-person mode
+	_update_body_perspective()
+	if is_third_person and player_body_rig != null:
 		LegendRigBuilder.animate_rig(player_body_rig, delta, {
 			"mode": "combat",
-			"is_first_person": not is_third_person,
+			"is_first_person": false,
 			"is_moving": is_moving_ground,
 			"is_sprinting": sprinting and is_moving_ground and not crouching and not is_ads and not firing,
 			"is_sliding": is_sliding,
@@ -754,7 +755,7 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, sprinting: bool, c
 			"time": Time.get_ticks_msec() / 1000.0
 		})
 
-	# 2. Compute Planned 1st-Person (`Head`-Bone-Anchored) or 3rd-Person Spring-Arm Camera Position
+	# 2. Compute 1st-Person or 3rd-Person Spring-Arm Camera Position
 	var land_dip: float = sin((land_compress_timer / 0.24) * PI) * 0.14 if land_compress_timer > 0.0 else 0.0
 	if is_third_person:
 		var eye_h: float = 1.08 if is_sliding else (1.28 if crouching else 1.82)
@@ -763,31 +764,8 @@ func _update_camera_and_rig(delta: float, input_dir: Vector2, sprinting: bool, c
 		target_cam_pos = _compute_spring_arm_cam_pos(Vector3(0, eye_h * 0.88, 0), desired_local)
 		camera.position = camera.position.lerp(target_cam_pos, delta * 15.0)
 	else:
-		var head_local := Vector3(0.02, 0.82 if is_sliding else (1.08 if crouching else 1.50), -0.02)
-		if player_body_rig != null:
-			var ual_m: Node3D = player_body_rig.get_node_or_null("UALCharacterModel") as Node3D
-			if ual_m != null:
-				var skels := ual_m.find_children("*", "Skeleton3D", true, false)
-				if not skels.is_empty():
-					var skel: Skeleton3D = skels[0] as Skeleton3D
-					if skel != null:
-						var h_idx: int = skel.find_bone("Head")
-						if h_idx >= 0:
-							head_local = to_local(skel.to_global(skel.get_bone_global_pose(h_idx).origin))
-		# Planned 1st-Person Camera Framing Offset in Camera Space:
-		# - Reloading (`reloading`): pulls slightly back/right `(0.09, -0.04, 0.08)` so both `hand_l` & `hand_r`
-		#   and the magazine swap are framed 0.30m-0.38m in front of the lens!
-		# - ADS (`is_ads`): aligns camera `(0.162, -0.092, -0.10)` directly behind `HeldWeaponRoot`'s 3D optic sight!
-		# - Hipfire / Normal: `(0.035, -0.045, -0.065)` frames `HeldWeaponRoot` & hands cleanly in lower-right foreground!
-		var cam_space_ofs := Vector3(0.035, -0.045, -0.065)
-		if reloading:
-			cam_space_ofs = Vector3(0.090, -0.040, 0.080)
-		elif is_ads and PlayerState.active_slot != 2 and PlayerState.heal_cast_timer <= 0.0:
-			cam_space_ofs = Vector3(0.162, -0.092, -0.100)
-		elif quick_melee or is_wall_climbing or is_mantling:
-			cam_space_ofs = Vector3(0.020, -0.030, 0.040)
-		var cam_basis := Basis.from_euler(Vector3(pitch, 0.0, 0.0))
-		target_cam_pos = head_local + (cam_basis * cam_space_ofs) - Vector3(0.0, land_dip, 0.0)
+		var eye_h: float = 0.95 if is_sliding else (1.18 if crouching else 1.68)
+		target_cam_pos = Vector3(0.0, eye_h - land_dip, 0.0)
 		camera.position = camera.position.lerp(target_cam_pos, delta * 22.0)
 
 	var target_roll: float = -0.20 if is_sliding else (sin(climb_phase) * 0.035 if is_wall_climbing else (-input_dir.x * 0.018))

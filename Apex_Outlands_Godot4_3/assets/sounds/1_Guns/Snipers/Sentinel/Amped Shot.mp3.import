@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c837yudkpbj40"
+path="res://.godot/imported/Amped Shot.mp3-072dbe441a69a9b2e1d412dd82331e45.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Sentinel/Amped Shot.mp3"
+dest_files=["res://.godot/imported/Amped Shot.mp3-072dbe441a69a9b2e1d412dd82331e45.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

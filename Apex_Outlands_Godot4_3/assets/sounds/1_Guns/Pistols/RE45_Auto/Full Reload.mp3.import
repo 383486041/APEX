@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b5kelh5sqgtx0"
+path="res://.godot/imported/Full Reload.mp3-2444bc249e05378b89494ba9a7788e6f.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Pistols/RE45_Auto/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-2444bc249e05378b89494ba9a7788e6f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b6vjodvuyq8re"
+path="res://.godot/imported/Shot with Chamber.mp3-9348a1fd3866a2ed0dd6d956a2770d94.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Shot with Chamber.mp3"
+dest_files=["res://.godot/imported/Shot with Chamber.mp3-9348a1fd3866a2ed0dd6d956a2770d94.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

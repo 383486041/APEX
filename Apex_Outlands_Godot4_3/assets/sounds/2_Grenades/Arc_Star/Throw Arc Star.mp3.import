@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b4r8tqdibtxw8"
+path="res://.godot/imported/Throw Arc Star.mp3-666453f24afe6ac534cb55f8c4dfd848.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Arc_Star/Throw Arc Star.mp3"
+dest_files=["res://.godot/imported/Throw Arc Star.mp3-666453f24afe6ac534cb55f8c4dfd848.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

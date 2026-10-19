@@ -510,6 +510,8 @@ func _ready() -> void:
 			get_tree().create_timer(0.2).timeout.connect(_run_victory_diagnostics)
 		elif arg == "--test-storm":
 			get_tree().create_timer(0.2).timeout.connect(_run_storm_escape_diagnostics)
+		elif arg == "--test-fp-gun":
+			get_tree().create_timer(0.2).timeout.connect(_run_fp_gun_diagnostics)
 
 func _spawn_enemies() -> void:
 	var count: int = 12 if PlayerState.selected_mode_id == "firing_range" else 21
@@ -669,6 +671,9 @@ func _process(delta: float) -> void:
 		_on_toast_pushed("➕ 已切换恢复品槽位：【%s (剩余 x%d)】 (按 4 使用，带完整收枪打药/打电动作)" % [hname, hcnt], "info")
 	elif _is_key_just_pressed(KEY_G):
 		ability_sys.throw_ordnance()
+	elif _is_key_just_pressed(KEY_F):
+		AudioSynthesizer.play_ping()
+		_on_toast_pushed("📍 战术标记：已标定方位目标！", "info")
 	elif _is_key_just_pressed(KEY_E):
 		_try_interact()
 	elif _is_key_just_pressed(KEY_F8):
@@ -1673,6 +1678,7 @@ func _trigger_victory_screen() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	AudioSynthesizer.play_loot_tick_open()
 	AudioSynthesizer.play_kill_confirmed()
+	AudioSynthesizer.play_announcer("apex_champions")
 	_on_toast_pushed("🏆 战场全部敌对小队已肃清！荣登 APEX 捍卫者！", "evo")
 
 	if victory_panel:
@@ -2207,4 +2213,40 @@ func _run_storm_escape_diagnostics() -> void:
 	print("==================================================")
 	print(">>> ALL 5 AI STORM ESCAPE & RADIATION TESTS PASSED! <<<")
 	print("==================================================")
+	get_tree().quit(0)
+
+func _run_fp_gun_diagnostics() -> void:
+	print("==================================================")
+	print(">>> RUNNING FP GUN DIAGNOSTICS <<<")
+	print("==================================================")
+	print("Player position: ", player.global_position)
+	print("Camera position: ", player.camera.global_position)
+	print("Camera basis: ", player.camera.global_transform.basis)
+	print("is_third_person: ", player.is_third_person)
+	print("player_body_rig: ", player.player_body_rig)
+	if player.player_body_rig:
+		print("  player_body_rig visible: ", player.player_body_rig.visible)
+		var ual_m: Node3D = player.player_body_rig.get_node_or_null("UALCharacterModel") as Node3D
+		if ual_m:
+			print("  ual_m visible: ", ual_m.visible)
+			print("  ual_m pos: ", ual_m.global_position)
+			var skels := ual_m.find_children("*", "Skeleton3D", true, false)
+			print("  skels count: ", skels.size())
+			var wep: Node3D = ual_m.find_child("HeldWeaponRoot", true, false) as Node3D
+			print("  HeldWeaponRoot: ", wep)
+			if wep:
+				print("  HeldWeaponRoot visible: ", wep.visible)
+				print("  HeldWeaponRoot global pos: ", wep.global_position)
+				print("  HeldWeaponRoot cam local pos: ", player.camera.to_local(wep.global_position))
+				print("  HeldWeaponRoot children: ", wep.get_child_count())
+				for ch in wep.get_children():
+					print("    HeldWeaponRoot child: ", ch.name, " visible: ", ch.visible)
+	print("viewmodel_holder: ", player.viewmodel_holder)
+	if player.viewmodel_holder:
+		print("  viewmodel_holder visible: ", player.viewmodel_holder.visible)
+		print("  viewmodel_holder child count: ", player.viewmodel_holder.get_child_count())
+		if player.viewmodel_holder.get_child_count() > 0:
+			var vm = player.viewmodel_holder.get_child(0)
+			print("  vm visible: ", vm.visible)
+			print("  vm pos: ", vm.position)
 	get_tree().quit(0)

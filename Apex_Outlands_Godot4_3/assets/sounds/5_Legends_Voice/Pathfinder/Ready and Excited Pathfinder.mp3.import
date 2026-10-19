@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ccryic56a82kl"
+path="res://.godot/imported/Ready and Excited Pathfinder.mp3-d7e657afa99658c9dcbef39a97085817.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Pathfinder/Ready and Excited Pathfinder.mp3"
+dest_files=["res://.godot/imported/Ready and Excited Pathfinder.mp3-d7e657afa99658c9dcbef39a97085817.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

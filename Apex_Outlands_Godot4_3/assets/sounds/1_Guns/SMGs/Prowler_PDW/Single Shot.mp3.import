@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dd3weuq84aicx"
+path="res://.godot/imported/Single Shot.mp3-d17c7e64fe56d3675fef456a177bb045.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Single Shot.mp3"
+dest_files=["res://.godot/imported/Single Shot.mp3-d17c7e64fe56d3675fef456a177bb045.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

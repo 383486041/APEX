@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://du0qao7uov1gj"
+path="res://.godot/imported/Hi Friends apex legends.mp3-60685f5634237de6f24ac92f60297da1.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Pathfinder/Hi Friends apex legends.mp3"
+dest_files=["res://.godot/imported/Hi Friends apex legends.mp3-60685f5634237de6f24ac92f60297da1.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

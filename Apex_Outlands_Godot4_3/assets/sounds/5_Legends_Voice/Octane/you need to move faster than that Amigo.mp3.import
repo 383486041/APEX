@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bst5fi8c4ljha"
+path="res://.godot/imported/you need to move faster than that Amigo.mp3-73c4bd69c5bedb936bf37c2e29196171.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Octane/you need to move faster than that Amigo.mp3"
+dest_files=["res://.godot/imported/you need to move faster than that Amigo.mp3-73c4bd69c5bedb936bf37c2e29196171.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b8p7e61js2mff"
+path="res://.godot/imported/Empty Shot.mp3-dac09e118696946eeae9266665b47ca2.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/G7_Scout/Empty Shot.mp3"
+dest_files=["res://.godot/imported/Empty Shot.mp3-dac09e118696946eeae9266665b47ca2.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

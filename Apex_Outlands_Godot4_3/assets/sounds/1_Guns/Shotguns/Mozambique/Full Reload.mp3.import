@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cgffrp1pwwnf1"
+path="res://.godot/imported/Full Reload.mp3-c2294e5617fb75b5ae747107d79be855.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Shotguns/Mozambique/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-c2294e5617fb75b5ae747107d79be855.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

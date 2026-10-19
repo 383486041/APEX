@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bd7bcmxua68bn"
+path="res://.godot/imported/caustic join my experiment.mp3-35872c155e57c11d60f624ddc321c8a1.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Caustic/caustic join my experiment.mp3"
+dest_files=["res://.godot/imported/caustic join my experiment.mp3-35872c155e57c11d60f624ddc321c8a1.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

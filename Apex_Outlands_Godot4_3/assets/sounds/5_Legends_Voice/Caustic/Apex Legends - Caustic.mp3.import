@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bevgntlv5mer"
+path="res://.godot/imported/Apex Legends - Caustic.mp3-4d4762194efb7c8bef684a4085367493.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Caustic/Apex Legends - Caustic.mp3"
+dest_files=["res://.godot/imported/Apex Legends - Caustic.mp3-4d4762194efb7c8bef684a4085367493.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

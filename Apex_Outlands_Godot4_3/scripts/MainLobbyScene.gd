@@ -52,7 +52,7 @@ func _ready() -> void:
 	var all_args: Array = OS.get_cmdline_args()
 	all_args.append_array(OS.get_cmdline_user_args())
 	for a in all_args:
-		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm":
+		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm" or a == "--test-fp-gun":
 			get_tree().change_scene_to_file.call_deferred("res://scenes/MatchWorld.tscn")
 			return
 
@@ -696,7 +696,7 @@ func _build_legends_tab() -> void:
 		var lid: String = l["id"]
 		btn.pressed.connect(func():
 			PlayerState.selected_legend_id = lid
-			AudioSynthesizer.play_evo_level_up()
+			AudioSynthesizer.play_legend_voice(lid)
 			_refresh_showcase()
 			update_dossier.call()
 		)
@@ -1252,7 +1252,7 @@ func _build_draft_screen() -> void:
 		var lid: String = l["id"]
 		btn.pressed.connect(func():
 			PlayerState.selected_legend_id = lid
-			AudioSynthesizer.play_evo_level_up()
+			AudioSynthesizer.play_legend_voice(lid)
 			_update_draft_voice()
 		)
 		grid.add_child(btn)

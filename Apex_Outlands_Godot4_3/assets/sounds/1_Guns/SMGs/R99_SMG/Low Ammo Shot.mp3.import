@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://doawtv624l2ep"
+path="res://.godot/imported/Low Ammo Shot.mp3-111b852ab73a78a6fceffc0a5d496fe8.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/R99_SMG/Low Ammo Shot.mp3"
+dest_files=["res://.godot/imported/Low Ammo Shot.mp3-111b852ab73a78a6fceffc0a5d496fe8.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

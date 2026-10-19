@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b7fdd8ik8fhwx"
+path="res://.godot/imported/Full Reload.mp3-19ba496e98a2bde2ef4b47ba052a0c16.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/G7_Scout/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-19ba496e98a2bde2ef4b47ba052a0c16.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

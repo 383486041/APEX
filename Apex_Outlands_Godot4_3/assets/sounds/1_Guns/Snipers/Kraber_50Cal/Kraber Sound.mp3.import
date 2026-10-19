@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://clxji5djn4xe8"
+path="res://.godot/imported/Kraber Sound.mp3-8cc2902c333b155e17611eb973b7b951.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Kraber Sound.mp3"
+dest_files=["res://.godot/imported/Kraber Sound.mp3-8cc2902c333b155e17611eb973b7b951.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

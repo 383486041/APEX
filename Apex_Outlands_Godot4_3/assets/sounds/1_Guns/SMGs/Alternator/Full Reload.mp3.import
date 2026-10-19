@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cqbipb357cjff"
+path="res://.godot/imported/Full Reload.mp3-4bf2ebfeddb5db600d50b534b794d367.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/Alternator/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-4bf2ebfeddb5db600d50b534b794d367.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

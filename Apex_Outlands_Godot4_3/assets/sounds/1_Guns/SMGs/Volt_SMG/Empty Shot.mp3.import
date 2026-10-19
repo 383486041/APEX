@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cfh0nspm2tjmn"
+path="res://.godot/imported/Empty Shot.mp3-e2794e4b21acfc2f7e4ea58cc0a29307.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/Volt_SMG/Empty Shot.mp3"
+dest_files=["res://.godot/imported/Empty Shot.mp3-e2794e4b21acfc2f7e4ea58cc0a29307.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

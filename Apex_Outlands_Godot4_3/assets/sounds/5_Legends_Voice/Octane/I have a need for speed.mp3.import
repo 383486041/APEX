@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cih3r36xcke3t"
+path="res://.godot/imported/I have a need for speed.mp3-b293f3fe15ad4cead12abca646cad842.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Octane/I have a need for speed.mp3"
+dest_files=["res://.godot/imported/I have a need for speed.mp3-b293f3fe15ad4cead12abca646cad842.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

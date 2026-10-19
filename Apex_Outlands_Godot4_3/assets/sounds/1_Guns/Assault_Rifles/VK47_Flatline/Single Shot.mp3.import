@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c3u7wo5ftj8km"
+path="res://.godot/imported/Single Shot.mp3-046a1d533903e2ecebf0164a308799f8.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/VK47_Flatline/Single Shot.mp3"
+dest_files=["res://.godot/imported/Single Shot.mp3-046a1d533903e2ecebf0164a308799f8.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

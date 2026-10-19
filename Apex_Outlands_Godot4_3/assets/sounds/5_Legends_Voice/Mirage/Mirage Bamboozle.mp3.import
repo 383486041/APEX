@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://csbco7u5uvn43"
+path="res://.godot/imported/Mirage Bamboozle.mp3-b02762842f74d52c4c8e249422a8f68b.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Mirage/Mirage Bamboozle.mp3"
+dest_files=["res://.godot/imported/Mirage Bamboozle.mp3-b02762842f74d52c4c8e249422a8f68b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://muqscu5n0sm"
+path="res://.godot/imported/Empty Shot.mp3-95c9587cb3ed2f273ec0abf1b72980e9.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Empty Shot.mp3"
+dest_files=["res://.godot/imported/Empty Shot.mp3-95c9587cb3ed2f273ec0abf1b72980e9.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

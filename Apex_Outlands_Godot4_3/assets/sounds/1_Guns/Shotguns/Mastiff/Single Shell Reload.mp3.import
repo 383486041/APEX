@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bhy0bilw7qmq8"
+path="res://.godot/imported/Single Shell Reload.mp3-1bd947d8c08ba4e78e47feb957804aaf.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Shotguns/Mastiff/Single Shell Reload.mp3"
+dest_files=["res://.godot/imported/Single Shell Reload.mp3-1bd947d8c08ba4e78e47feb957804aaf.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

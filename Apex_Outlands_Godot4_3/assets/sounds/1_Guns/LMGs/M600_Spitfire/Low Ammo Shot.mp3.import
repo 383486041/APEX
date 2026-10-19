@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bop5xfdo7fxk"
+path="res://.godot/imported/Low Ammo Shot.mp3-5bd40a23cd000a7219a9597ae36ce0d2.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Low Ammo Shot.mp3"
+dest_files=["res://.godot/imported/Low Ammo Shot.mp3-5bd40a23cd000a7219a9597ae36ce0d2.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

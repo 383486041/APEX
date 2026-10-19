@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsnuhlt5b1ury"
+path="res://.godot/imported/Arc Star Detonation.mp3-47039d9729411381f5c2ec3480fe4f57.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Arc_Star/Arc Star Detonation.mp3"
+dest_files=["res://.godot/imported/Arc Star Detonation.mp3-47039d9729411381f5c2ec3480fe4f57.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

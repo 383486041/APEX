@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b1gkp1e1wvyo1"
+path="res://.godot/imported/Amped Shot with Chamber.mp3-117db37929f4600636abb72d599d9d00.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Sentinel/Amped Shot with Chamber.mp3"
+dest_files=["res://.godot/imported/Amped Shot with Chamber.mp3-117db37929f4600636abb72d599d9d00.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

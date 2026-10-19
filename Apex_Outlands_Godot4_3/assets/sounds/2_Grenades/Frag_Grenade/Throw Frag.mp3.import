@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cov02vbhyrgur"
+path="res://.godot/imported/Throw Frag.mp3-51d04af5b216fad4a45c552854004773.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Frag_Grenade/Throw Frag.mp3"
+dest_files=["res://.godot/imported/Throw Frag.mp3-51d04af5b216fad4a45c552854004773.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

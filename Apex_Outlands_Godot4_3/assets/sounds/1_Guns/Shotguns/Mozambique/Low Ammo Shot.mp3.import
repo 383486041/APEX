@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bl0xjqkj0xsc8"
+path="res://.godot/imported/Low Ammo Shot.mp3-2ea35e37157831910a53cda974af8008.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Shotguns/Mozambique/Low Ammo Shot.mp3"
+dest_files=["res://.godot/imported/Low Ammo Shot.mp3-2ea35e37157831910a53cda974af8008.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

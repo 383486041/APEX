@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ba43hc4336njq"
+path="res://.godot/imported/Full Reload.mp3-9d2ac4c934ead860537ac4aaf55da2c2.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-9d2ac4c934ead860537ac4aaf55da2c2.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

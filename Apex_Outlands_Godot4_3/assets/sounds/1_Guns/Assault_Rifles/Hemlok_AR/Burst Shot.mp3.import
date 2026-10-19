@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsgc2oqmri255"
+path="res://.godot/imported/Burst Shot.mp3-40a4b3f032f3c448d02eb1f1027e168a.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Burst Shot.mp3"
+dest_files=["res://.godot/imported/Burst Shot.mp3-40a4b3f032f3c448d02eb1f1027e168a.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dup50gqynpwfw"
+path="res://.godot/imported/Full Reload.mp3-daec2bd0d58310b5d2e2d76d07ea7463.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Shotguns/Eva8_Auto/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-daec2bd0d58310b5d2e2d76d07ea7463.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

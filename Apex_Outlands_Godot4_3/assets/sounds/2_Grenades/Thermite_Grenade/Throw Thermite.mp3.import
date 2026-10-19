@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://s0oeq17q3r7d"
+path="res://.godot/imported/Throw Thermite.mp3-a59ae77d1bd8a711ac44d73ce715339f.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Thermite_Grenade/Throw Thermite.mp3"
+dest_files=["res://.godot/imported/Throw Thermite.mp3-a59ae77d1bd8a711ac44d73ce715339f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

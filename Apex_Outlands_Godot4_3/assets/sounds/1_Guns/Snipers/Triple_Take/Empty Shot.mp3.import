@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://7bt25gl2bn2f"
+path="res://.godot/imported/Empty Shot.mp3-158ac6430e04e7a2b7a103a61eb930c2.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Triple_Take/Empty Shot.mp3"
+dest_files=["res://.godot/imported/Empty Shot.mp3-158ac6430e04e7a2b7a103a61eb930c2.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

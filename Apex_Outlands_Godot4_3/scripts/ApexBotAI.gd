@@ -684,6 +684,12 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 	if hp <= 0.0:
 		AudioSynthesizer.play_kill_confirmed()
 		PlayerState.kills += 1
+		if PlayerState.kills == 1:
+			AudioSynthesizer.play_announcer("first_blood")
+		elif PlayerState.kills == 3:
+			AudioSynthesizer.play_announcer("kill_leader")
+		else:
+			AudioSynthesizer.play_knockdown()
 		PlayerState.add_damage_and_evo(100)
 		if PlayerState.beast_timer > 0.0:
 			PlayerState.beast_timer += 4.0

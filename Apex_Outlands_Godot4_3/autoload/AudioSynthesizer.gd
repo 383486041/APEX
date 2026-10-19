@@ -15,11 +15,124 @@ const NUM_CHANNELS: int = 8
 var channels: Array[AudioStreamPlayer] = []
 var heal_channel: AudioStreamPlayer
 var charge_channel: AudioStreamPlayer
+var announcer_channel: AudioStreamPlayer
+var voice_channel: AudioStreamPlayer
 var next_channel_idx: int = 0
 var muted: bool = false
 
 # Pre-baked high-frequency reusable WAV cache for zero-latency polyphonic playback
 var wav_cache: Dictionary = {}
+var sfx_cache: Dictionary = {}
+
+const SOUND_MAP: Dictionary = {
+	# Assault Rifles
+	"r301": "res://assets/sounds/1_Guns/Assault_Rifles/R301_Carbine/Spray.mp3",
+	"flatline": "res://assets/sounds/1_Guns/Assault_Rifles/VK47_Flatline/Spray.mp3",
+	"hemlok": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Burst Shot.mp3",
+	"havoc": "res://assets/sounds/1_Guns/Assault_Rifles/Havoc_Rifle/Spray.mp3",
+	"g7": "res://assets/sounds/1_Guns/Assault_Rifles/G7_Scout/Shot.mp3",
+	"nemesis": "res://assets/sounds/1_Guns/Assault_Rifles/Hemlok_AR/Burst Shot.mp3",
+
+	# SMGs
+	"r99": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Spray.mp3",
+	"volt": "res://assets/sounds/1_Guns/SMGs/Volt_SMG/Spray.mp3",
+	"alternator": "res://assets/sounds/1_Guns/SMGs/Alternator/Spray.mp3",
+	"prowler": "res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Burst Shot.mp3",
+	"car": "res://assets/sounds/1_Guns/SMGs/R99_SMG/Spray.mp3",
+
+	# Snipers & Marksman
+	"kraber": "res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Shot with Chamber.mp3",
+	"sentinel": "res://assets/sounds/1_Guns/Snipers/Sentinel/Shot with Chamber.mp3",
+	"chargerifle": "res://assets/sounds/1_Guns/Snipers/Charge_Rifle/Shot.mp3",
+	"longbow": "res://assets/sounds/1_Guns/Snipers/Longbow_DMR/Shot.mp3",
+	"tripletake": "res://assets/sounds/1_Guns/Snipers/Triple_Take/Shot.mp3",
+	"repeater3030": "res://assets/sounds/1_Guns/Snipers/Longbow_DMR/Shot.mp3",
+
+	# Shotguns
+	"peacekeeper": "res://assets/sounds/1_Guns/Shotguns/Peacekeeper/Shot.mp3",
+	"mastiff": "res://assets/sounds/1_Guns/Shotguns/Mastiff/Shot.mp3",
+	"eva8": "res://assets/sounds/1_Guns/Shotguns/Eva8_Auto/Shot.mp3",
+	"mozambique": "res://assets/sounds/1_Guns/Shotguns/Mozambique/Shot.mp3",
+
+	# LMGs
+	"devotion": "res://assets/sounds/1_Guns/LMGs/Devotion_LMG/Spray.mp3",
+	"spitfire": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Spray.mp3",
+	"lstar": "res://assets/sounds/1_Guns/LMGs/LStar_EMG/Short Spray.mp3",
+	"rampage": "res://assets/sounds/1_Guns/LMGs/M600_Spitfire/Spray.mp3",
+
+	# Pistols
+	"wingman": "res://assets/sounds/1_Guns/Pistols/Wingman/Shot.mp3",
+	"re45": "res://assets/sounds/1_Guns/Pistols/RE45_Auto/Spray.mp3",
+	"p2020": "res://assets/sounds/1_Guns/Pistols/P2020/Shot.mp3",
+
+	# Combat Feedback & HUD
+	"shield_crack": "res://assets/sounds/3_Combat_and_HUD/Shield_Crack.mp3",
+	"knockdown": "res://assets/sounds/3_Combat_and_HUD/Knockdown_Sound.mp3",
+	"ping": "res://assets/sounds/3_Combat_and_HUD/Ping_Sound.mp3",
+	"shield_cell": "res://assets/sounds/3_Combat_and_HUD/Shield_Cell_Heal.mp3",
+	"evo_shield": "res://assets/sounds/3_Combat_and_HUD/Evo_Shield_Upgrade.mp3",
+	"jumpmaster": "res://assets/sounds/3_Combat_and_HUD/Jumpmaster_Drop.mp3",
+	"apex_predator": "res://assets/sounds/3_Combat_and_HUD/Apex_Predator.mp3",
+	"mozambique_here": "res://assets/sounds/3_Combat_and_HUD/Mozambique_Here.mp3",
+
+	# Announcer
+	"announcer_first_blood": "res://assets/sounds/4_Announcer/First_Blood.mp3",
+	"announcer_kill_leader": "res://assets/sounds/4_Announcer/New_Kill_Leader.mp3",
+	"announcer_apex_champions": "res://assets/sounds/4_Announcer/Apex_Champions.mp3",
+	"announcer_champion_eliminated": "res://assets/sounds/4_Announcer/Champion_Eliminated.mp3",
+	"announcer_care_package_delivering": "res://assets/sounds/4_Announcer/Care_Package_Delivering.mp3",
+	"announcer_care_package_arrived": "res://assets/sounds/4_Announcer/Care_Package_Arrived.mp3"
+}
+
+const LEGEND_VOICES: Dictionary = {
+	"octane": [
+		"res://assets/sounds/5_Legends_Voice/Octane/I have a need for speed.mp3",
+		"res://assets/sounds/5_Legends_Voice/Octane/you need to move faster than that Amigo.mp3",
+		"res://assets/sounds/5_Legends_Voice/Octane/These legs werent made for walking.mp3"
+	],
+	"pathfinder": [
+		"res://assets/sounds/5_Legends_Voice/Pathfinder/Good Luck Have Fun Pathfinder.mp3",
+		"res://assets/sounds/5_Legends_Voice/Pathfinder/Hi Friends apex legends.mp3",
+		"res://assets/sounds/5_Legends_Voice/Pathfinder/Lets go for a ride.mp3",
+		"res://assets/sounds/5_Legends_Voice/Pathfinder/Ready and Excited Pathfinder.mp3"
+	],
+	"mirage": [
+		"res://assets/sounds/5_Legends_Voice/Mirage/Bamboozled.mp3",
+		"res://assets/sounds/5_Legends_Voice/Mirage/Apex legends Mirage Bamboozle.mp3",
+		"res://assets/sounds/5_Legends_Voice/Mirage/Mirage Sound Effect.mp3"
+	],
+	"wraith": [
+		"res://assets/sounds/5_Legends_Voice/Wraith/They wont see me coming.mp3",
+		"res://assets/sounds/5_Legends_Voice/Wraith/Ever get a feeling you're not alone in the room.mp3"
+	],
+	"caustic": [
+		"res://assets/sounds/5_Legends_Voice/Caustic/caustic join my experiment.mp3",
+		"res://assets/sounds/5_Legends_Voice/Caustic/caustic simply remark.mp3",
+		"res://assets/sounds/5_Legends_Voice/Caustic/Apex Legends - Caustic.mp3"
+	],
+	"lifeline": [
+		"res://assets/sounds/5_Legends_Voice/Lifeline/Lifeline_Voice.mp3"
+	],
+	"crypto": [
+		"res://assets/sounds/5_Legends_Voice/Crypto/Crypto_Voice.mp3"
+	],
+	"revenant": [
+		"res://assets/sounds/5_Legends_Voice/Revenant/Revenant_Voice.mp3"
+	],
+	"gibraltar": [
+		"res://assets/sounds/5_Legends_Voice/Gibraltar/Gibraltar_Voice.mp3"
+	]
+}
+
+const GRENADE_SOUNDS: Dictionary = {
+	"arc_star_throw": "res://assets/sounds/2_Grenades/Arc_Star/Throw Arc Star.mp3",
+	"arc_star_detonation": "res://assets/sounds/2_Grenades/Arc_Star/Arc Star Detonation.mp3",
+	"arc_star_explosion": "res://assets/sounds/2_Grenades/Arc_Star/Arc Star Explosion.mp3",
+	"frag_throw": "res://assets/sounds/2_Grenades/Frag_Grenade/Throw Frag.mp3",
+	"frag_explosion": "res://assets/sounds/2_Grenades/Frag_Grenade/Frag Explosion.mp3",
+	"thermite_throw": "res://assets/sounds/2_Grenades/Thermite_Grenade/Throw Thermite.mp3",
+	"thermite_explosion": "res://assets/sounds/2_Grenades/Thermite_Grenade/Thermite Explosion and Residue.mp3"
+}
 
 func _ready() -> void:
 	for i in range(NUM_CHANNELS):
@@ -39,7 +152,29 @@ func _ready() -> void:
 	charge_channel.volume_db = -1.5
 	add_child(charge_channel)
 
+	announcer_channel = AudioStreamPlayer.new()
+	announcer_channel.name = "AnnouncerChannel"
+	announcer_channel.volume_db = 1.0
+	add_child(announcer_channel)
+
+	voice_channel = AudioStreamPlayer.new()
+	voice_channel.name = "VoiceChannel"
+	voice_channel.volume_db = 1.0
+	add_child(voice_channel)
+
 	_prebake_core_soundbank()
+
+func get_sfx(key: String) -> AudioStream:
+	if sfx_cache.has(key):
+		return sfx_cache[key]
+	if SOUND_MAP.has(key):
+		var path: String = SOUND_MAP[key]
+		if ResourceLoader.exists(path):
+			var s: AudioStream = load(path)
+			if s != null:
+				sfx_cache[key] = s
+				return s
+	return null
 
 func toggle_mute() -> bool:
 	muted = not muted
@@ -47,7 +182,10 @@ func toggle_mute() -> bool:
 		stop_heal_sound()
 	return muted
 
-func _play_wav(stream: AudioStreamWAV, pitch_scale: float = 1.0, vol_db: float = -2.0) -> void:
+func _play_wav(stream: AudioStream, pitch_scale: float = 1.0, vol_db: float = -2.0) -> void:
+	_play_stream(stream, pitch_scale, vol_db)
+
+func _play_stream(stream: AudioStream, pitch_scale: float = 1.0, vol_db: float = -2.0) -> void:
 	if muted or stream == null or channels.is_empty():
 		return
 	var ch: AudioStreamPlayer = channels[next_channel_idx]
@@ -56,6 +194,7 @@ func _play_wav(stream: AudioStreamWAV, pitch_scale: float = 1.0, vol_db: float =
 	ch.pitch_scale = clampf(pitch_scale, 0.5, 2.0)
 	ch.volume_db = vol_db
 	ch.play()
+
 
 ## Builds a 16-bit mono AudioStreamWAV from an Array of layered acoustic descriptors
 func _build_layered_wav(duration: float, layers: Array) -> AudioStreamWAV:
@@ -257,6 +396,20 @@ func _prebake_core_soundbank() -> void:
 func play_gunshot(cat: String, wid: String = "") -> void:
 	if muted:
 		return
+	var s: AudioStream = get_sfx(wid)
+	if s != null:
+		var pitch: float = randf_range(0.97, 1.03)
+		var vol: float = -1.0
+		if cat == "SNIPER":
+			vol = 1.0
+		elif cat == "SHOTGUN":
+			vol = 0.5
+		elif cat == "SMG":
+			vol = -2.0
+		_play_stream(s, pitch, vol)
+		return
+
+	# Fallback to procedural acoustic synthesis if asset not mapped
 	if wid == "bocek":
 		_play_wav(wav_cache.get("bow_release"), randf_range(0.96, 1.04), -1.0)
 		return
@@ -294,8 +447,12 @@ func play_charge_rifle_charge(progress: float) -> void:
 	charge_channel.play()
 
 func play_charge_rifle_blast() -> void:
-	_play_wav(wav_cache.get("gun_sniper"), 0.85, 1.0)
-	_play_wav(wav_cache.get("shield_crack"), 0.90, -1.0)
+	var s: AudioStream = get_sfx("chargerifle")
+	if s != null:
+		_play_stream(s, 1.0, 1.2)
+	else:
+		_play_wav(wav_cache.get("gun_sniper"), 0.85, 1.0)
+		_play_wav(wav_cache.get("shield_crack"), 0.90, -1.0)
 
 func play_reload_step(step_name: String) -> void:
 	match step_name:
@@ -343,6 +500,11 @@ func play_heal_progress_pulse(heal_id: String, progress: float) -> void:
 func play_heal_complete(heal_id: String) -> void:
 	if muted:
 		return
+	if heal_id == "shield_cell":
+		var s: AudioStream = get_sfx("shield_cell")
+		if s != null:
+			_play_stream(s, 1.0, 0.0)
+			return
 	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
 	var stream: AudioStreamWAV = wav_cache.get("battery_complete") if is_shield else wav_cache.get("medkit_complete")
 	_play_wav(stream, 1.0, -0.5)
@@ -373,16 +535,37 @@ func play_flesh_hit(is_headshot: bool = false) -> void:
 	_play_wav(wav_cache.get("flesh_hit"), 1.18 if is_headshot else 1.0, 0.0 if is_headshot else -1.2)
 
 func play_shield_crack() -> void:
-	_play_wav(wav_cache.get("shield_crack"), 1.0, 0.5)
+	var s: AudioStream = get_sfx("shield_crack")
+	if s != null:
+		_play_stream(s, 1.0, 1.0)
+	else:
+		_play_wav(wav_cache.get("shield_crack"), 1.0, 0.5)
 
 func play_knockdown() -> void:
-	_play_wav(wav_cache.get("kill_confirmed"), 0.92, 0.0)
+	var s: AudioStream = get_sfx("knockdown")
+	if s != null:
+		_play_stream(s, 1.0, 1.2)
+	else:
+		_play_wav(wav_cache.get("kill_confirmed"), 0.92, 0.0)
 
 func play_kill_confirmed() -> void:
-	_play_wav(wav_cache.get("kill_confirmed"), 1.0, 0.5)
+	var s: AudioStream = get_sfx("knockdown")
+	if s != null:
+		_play_stream(s, 1.0, 1.0)
+	else:
+		_play_wav(wav_cache.get("kill_confirmed"), 1.0, 0.5)
+
+func play_ping() -> void:
+	var s: AudioStream = get_sfx("ping")
+	if s != null:
+		_play_stream(s, 1.0, 0.0)
 
 func play_evo_level_up() -> void:
-	_play_wav(wav_cache.get("battery_complete"), 1.05, -0.5)
+	var s: AudioStream = get_sfx("evo_shield")
+	if s != null:
+		_play_stream(s, 1.0, 0.0)
+	else:
+		_play_wav(wav_cache.get("battery_complete"), 1.05, -0.5)
 
 func play_loot_tick_open() -> void:
 	_play_wav(wav_cache.get("supply_bin_open"), 1.15, 0.0)
@@ -430,3 +613,40 @@ func play_consumable_progress(heal_id: String, progress: float) -> void:
 
 func play_consumable_complete(heal_id: String) -> void:
 	play_heal_complete(heal_id)
+
+func play_announcer(event_name: String) -> void:
+	if muted:
+		return
+	var key: String = "announcer_" + event_name
+	var s: AudioStream = get_sfx(key)
+	if s != null and is_instance_valid(announcer_channel):
+		announcer_channel.stream = s
+		announcer_channel.pitch_scale = 1.0
+		announcer_channel.volume_db = 1.0
+		announcer_channel.play()
+
+func play_legend_voice(legend_id: String, variant: int = -1) -> void:
+	if muted or not LEGEND_VOICES.has(legend_id):
+		return
+	var vlist: Array = LEGEND_VOICES[legend_id]
+	if vlist.is_empty():
+		return
+	var idx: int = variant if (variant >= 0 and variant < vlist.size()) else randi() % vlist.size()
+	var path: String = str(vlist[idx])
+	if ResourceLoader.exists(path) and is_instance_valid(voice_channel):
+		var s: AudioStream = load(path)
+		if s != null:
+			voice_channel.stream = s
+			voice_channel.volume_db = 1.0
+			voice_channel.pitch_scale = 1.0
+			voice_channel.play()
+
+func play_grenade(grenade_type: String, action: String) -> void:
+	var key := "%s_%s" % [grenade_type, action]
+	if GRENADE_SOUNDS.has(key):
+		var p: String = GRENADE_SOUNDS[key]
+		if ResourceLoader.exists(p):
+			var s: AudioStream = load(p)
+			if s != null:
+				_play_stream(s, randf_range(0.96, 1.04), 0.0)
+

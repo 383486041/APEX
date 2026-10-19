@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b6lpdg0faqiug"
+path="res://.godot/imported/Turbocharger Spray.mp3-6272a1eebbbe2382ea68420632791a2b.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/LMGs/Devotion_LMG/Turbocharger Spray.mp3"
+dest_files=["res://.godot/imported/Turbocharger Spray.mp3-6272a1eebbbe2382ea68420632791a2b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

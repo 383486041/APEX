@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ckp1uww3mf66g"
+path="res://.godot/imported/Full Reload.mp3-aa3221d0d00d8e3b3fc14528c44678da.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Assault_Rifles/VK47_Flatline/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-aa3221d0d00d8e3b3fc14528c44678da.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

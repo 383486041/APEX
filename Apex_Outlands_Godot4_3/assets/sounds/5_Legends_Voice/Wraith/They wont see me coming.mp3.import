@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c32m31538q0w0"
+path="res://.godot/imported/They wont see me coming.mp3-a3b202d40fe8d4efcd61ce55d38a2d06.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Wraith/They wont see me coming.mp3"
+dest_files=["res://.godot/imported/They wont see me coming.mp3-a3b202d40fe8d4efcd61ce55d38a2d06.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

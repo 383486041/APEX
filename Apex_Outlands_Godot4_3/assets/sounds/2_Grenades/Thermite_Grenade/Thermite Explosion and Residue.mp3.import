@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://d22a87y1apqtt"
+path="res://.godot/imported/Thermite Explosion and Residue.mp3-cc30b6fb7157b10dd2c9604431326562.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Thermite_Grenade/Thermite Explosion and Residue.mp3"
+dest_files=["res://.godot/imported/Thermite Explosion and Residue.mp3-cc30b6fb7157b10dd2c9604431326562.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

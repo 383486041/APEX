@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bji582c637d8b"
+path="res://.godot/imported/Low Ammo Shot.mp3-d33a4b3c0e830b1f6d74525783c64627.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Pistols/P2020/Low Ammo Shot.mp3"
+dest_files=["res://.godot/imported/Low Ammo Shot.mp3-d33a4b3c0e830b1f6d74525783c64627.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

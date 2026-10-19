@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ce7umdfen5l0"
+path="res://.godot/imported/Full Reload.mp3-2f5b677a2e98e7b243104ede32f91d46.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-2f5b677a2e98e7b243104ede32f91d46.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

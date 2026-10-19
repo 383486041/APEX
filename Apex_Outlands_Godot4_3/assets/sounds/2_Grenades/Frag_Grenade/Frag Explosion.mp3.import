@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cnauw6j1ba7es"
+path="res://.godot/imported/Frag Explosion.mp3-c8572ae1895f37e847f86854826be7e9.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Frag_Grenade/Frag Explosion.mp3"
+dest_files=["res://.godot/imported/Frag Explosion.mp3-c8572ae1895f37e847f86854826be7e9.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

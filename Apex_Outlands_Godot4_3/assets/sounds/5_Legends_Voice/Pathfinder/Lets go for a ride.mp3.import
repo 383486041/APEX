@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bdq4jergkieq1"
+path="res://.godot/imported/Lets go for a ride.mp3-d6404df2fe61aa68f3753a8ac054cbba.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Pathfinder/Lets go for a ride.mp3"
+dest_files=["res://.godot/imported/Lets go for a ride.mp3-d6404df2fe61aa68f3753a8ac054cbba.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

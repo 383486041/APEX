@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://uwo3htndc2xl"
+path="res://.godot/imported/Empty Shot.mp3-5b01d36bb12c9d65224603b2e59761da.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/Snipers/Kraber_50Cal/Empty Shot.mp3"
+dest_files=["res://.godot/imported/Empty Shot.mp3-5b01d36bb12c9d65224603b2e59761da.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

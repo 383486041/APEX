@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cgx4p0hknpeul"
+path="res://.godot/imported/Swap to Arc Star.mp3-3f1d7f6f3bd02b1fc76ad5a75c840387.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/2_Grenades/Arc_Star/Swap to Arc Star.mp3"
+dest_files=["res://.godot/imported/Swap to Arc Star.mp3-3f1d7f6f3bd02b1fc76ad5a75c840387.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

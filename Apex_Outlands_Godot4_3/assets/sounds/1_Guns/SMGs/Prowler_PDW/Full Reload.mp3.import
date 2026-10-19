@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b3hvjx6q4633i"
+path="res://.godot/imported/Full Reload.mp3-3a3d4d1364da524a74a7e21078dbc3c4.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/1_Guns/SMGs/Prowler_PDW/Full Reload.mp3"
+dest_files=["res://.godot/imported/Full Reload.mp3-3a3d4d1364da524a74a7e21078dbc3c4.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bsxkexqc4da62"
+path="res://.godot/imported/Ever get a feeling you're not alone in the room.mp3-4fc735448fc3fbe8a2fc1befae4c3b95.mp3str"
+
+[deps]
+
+source_file="res://assets/sounds/5_Legends_Voice/Wraith/Ever get a feeling you're not alone in the room.mp3"
+dest_files=["res://.godot/imported/Ever get a feeling you're not alone in the room.mp3-4fc735448fc3fbe8a2fc1befae4c3b95.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
