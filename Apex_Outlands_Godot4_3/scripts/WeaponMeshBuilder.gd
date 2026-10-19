@@ -238,18 +238,25 @@ static func _build_boxing_glove_on_arm(arm_node: Node3D, is_left: bool, h_col: C
 
 
 static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is_heirloom: bool = false, rec_len: float = 0.48, is_bow: bool = false, wid: String = "r301") -> void:
-	## 3rd-Generation Full-Length Articulated First-Person Arms (Forearm + Elbow + UpperArm to Shoulder so arms NEVER float in mid-air!)
+	## Generation 6.0 Unified Sculpted 3D First-Person Arms & Hands (`1P手模与3P角色手模100%同源一致`):
+	## Directly extracts the sculpted 3D arm, wrist, palm, and 5 articulated fingers from `Mannequin_F.glb`
+	## (for female Legends) or `UAL1_Standard.glb` (for male/robot Legends) with identical 2-surface PBR materials
+	## (`mat_prim` armor & `mat_under` undersuit/gloves) and 12-Legend bespoke 3D forearm gauntlets!
 	var lid: String = str(legend_data.get("id", "wraith"))
+	var is_female: bool = lid in ["wraith", "lifeline", "bangalore", "ash", "horizon", "valkyrie"]
+	var is_robot: bool = (lid == "pathfinder" or lid == "ash")
 	var col_prim: Color = legend_data.get("primary_color", Color("#312e81"))
 	var col_sec: Color = legend_data.get("secondary_color", Color("#38bdf8"))
+	var col_under: Color = LegendRigBuilder._get_legend_undersuit_color(lid)
 	var h_info: Dictionary = legend_data.get("heirloom", {"color": Color("#38bdf8")})
 	var h_col: Color = h_info.get("color", Color("#38bdf8"))
 
-	var mat_sleeve := _make_mat(col_prim, 0.42, 0.44)
+	# Exact same 2-surface PBR materials as 3rd-person `LegendRigBuilder.create_legend_rig`!
+	var mat_prim := _make_mat(col_prim, 0.72 if is_robot else 0.45, 0.26 if is_robot else 0.42, false, 1.0, "gunmetal" if is_robot else "carbon_weave")
+	var mat_under := _make_mat(col_under, 0.65 if is_robot else 0.25, 0.30 if is_robot else 0.62, false, 1.0, "polymer_grip")
+	var mat_sleeve := mat_prim
 	var mat_trim := _make_mat(col_sec, 0.76, 0.25)
-	var mat_glove := _make_mat(Color("#0f172a"), 0.35, 0.55)
 	var mat_leather := _make_mat(Color("#1e293b"), 0.28, 0.65)
-	var mat_knuckle := _make_mat(Color("#475569"), 0.85, 0.20)
 	var mat_chrome := _make_mat(Color("#cbd5e1"), 0.92, 0.16)
 	var mat_gold := _make_mat(Color("#f59e0b"), 0.90, 0.18)
 	var mat_hud := _make_mat(Color("#38bdf8"), 0.2, 0.1, true, 3.4)
@@ -259,7 +266,7 @@ static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is
 
 	var grip_prof: Dictionary = WeaponMeshBuilder.get_weapon_grip_profile(wid)
 
-	# 1. Left Arm (LeftArmPivot) — Collinear Forearm + Elbow + UpperArm anchored to off-screen Left Shoulder!
+	# 1. Left Arm (`LeftArmPivot`) — Authentic Sculpted 3D Character Left Arm, Palm & 5 Curled Fingers!
 	var left_arm := Node3D.new()
 	left_arm.name = "LeftArmPivot"
 	if is_heirloom:
@@ -271,58 +278,64 @@ static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is
 		left_arm.rotation = grip_prof.get("left_rot", Vector3.ZERO)
 	gun_rig.add_child(left_arm)
 
-	var l_sleeve_mat := mat_chrome if (lid == "pathfinder") else mat_sleeve
-	# Collinear Forearm extending straight back from wrist (z=0.04) to elbow (z=0.48)
-	_add_capsule(left_arm, 0.041, 0.48, Vector3(0.0, -0.01, 0.25), l_sleeve_mat, Vector3(PI * 0.5, 0.0, 0.0), "LeftForearm")
-	_add_cyl(left_arm, 0.045, 0.047, 0.18, Vector3(0.0, -0.01, 0.22), mat_trim, Vector3(PI * 0.5, 0.0, 0.0), 14, "LeftVambrace")
-	# Elbow Joint & Upper Arm extending down-and-back to off-screen shoulder (prevents detached floating arm!)
-	_add_sphere(left_arm, 0.044, Vector3(0.0, -0.01, 0.47), mat_glove, "LeftElbowJoint")
-	_add_capsule(left_arm, 0.045, 0.54, Vector3(-0.08, -0.16, 0.66), l_sleeve_mat, Vector3(PI * 0.5 + 0.52, -0.28, 0.0), "LeftUpperArm")
+	var sculpted_l_mesh: ArrayMesh = LegendRigBuilder.get_sculpted_fp_arm_mesh(is_female, true)
+	if sculpted_l_mesh != null:
+		var l_mi := MeshInstance3D.new()
+		l_mi.name = "SculptedLeftArmMesh"
+		l_mi.mesh = sculpted_l_mesh
+		l_mi.set_surface_override_material(0, mat_prim)
+		if sculpted_l_mesh.get_surface_count() > 1:
+			l_mi.set_surface_override_material(1, mat_under)
+		left_arm.add_child(l_mi)
 
 	# Wrist Tactical Chrono HUD
-	var chrono := _add_box(left_arm, Vector3(0.072, 0.018, 0.046), Vector3(0.0, 0.036, 0.095), mat_leather, Vector3.ZERO, "WristChrono")
-	_add_box(chrono, Vector3(0.058, 0.005, 0.032), Vector3(0, 0.010, 0), mat_hud)
+	var chrono := _add_box(left_arm, Vector3(0.068, 0.016, 0.044), Vector3(0.0, 0.038, 0.085), mat_leather, Vector3.ZERO, "WristChrono")
+	_add_box(chrono, Vector3(0.054, 0.005, 0.030), Vector3(0, 0.009, 0), mat_hud)
 
 	if is_heirloom and lid == "pathfinder":
 		_build_boxing_glove_on_arm(left_arm, true, h_col)
-	else:
-		_add_sphere(left_arm, 0.036, Vector3(0.0, -0.008, 0.025), mat_glove, "LeftWristJoint")
-		_add_box(left_arm, Vector3(0.078, 0.058, 0.088), Vector3(0.0, 0.006, -0.02), mat_glove, Vector3(0, 0, -0.15), "LeftGloveHand")
-		_add_box(left_arm, Vector3(0.074, 0.016, 0.038), Vector3(-0.002, 0.036, -0.022), mat_knuckle, Vector3(0, 0, -0.15))
-		_add_capsule(left_arm, 0.012, 0.058, Vector3(0.036, 0.026, -0.025), mat_leather, Vector3(0.35, 0.45, -0.45), "LeftThumb")
-		for fi in range(4):
-			var fz: float = -0.052 + float(fi) * 0.018
-			var f_curl: float = 0.35 if (is_heirloom and lid == "wraith") else 1.25
-			_add_capsule(left_arm, 0.010, 0.054, Vector3(0.018, -0.022, fz), mat_leather, Vector3(0.15, 0.0, f_curl), "LeftFinger%d" % fi)
+	elif is_heirloom and lid == "lifeline":
+		var l_stick := Node3D.new()
+		l_stick.name = "LeftShockStick"
+		l_stick.position = Vector3(0.01, 0.02, -0.08)
+		l_stick.rotation = Vector3(0.35, 0.22, -0.18)
+		left_arm.add_child(l_stick)
+		_add_cyl(l_stick, 0.014, 0.016, 0.38, Vector3(0, 0.08, 0), mat_leather, Vector3.ZERO, 10)
+		_add_cyl(l_stick, 0.022, 0.018, 0.07, Vector3(0, -0.09, 0), mat_gold, Vector3.ZERO, 10)
+		_add_sphere(l_stick, 0.030, Vector3(0, 0.28, 0), mat_plasma)
+		_add_ring(l_stick, 0.034, 0.044, Vector3(0, 0.23, 0), mat_plasma, Vector3.ZERO, 16)
+	elif is_heirloom and lid == "ash":
+		var l_kat := Node3D.new()
+		l_kat.name = "LeftNunchakuSection"
+		l_kat.position = Vector3(0.01, 0.02, -0.08)
+		l_kat.rotation = Vector3(0.42, 0.25, -0.22)
+		left_arm.add_child(l_kat)
+		_add_cyl(l_kat, 0.015, 0.015, 0.20, Vector3(0, 0.02, 0), mat_leather, Vector3.ZERO, 10)
+		_add_box(l_kat, Vector3(0.012, 0.18, 0.034), Vector3(0, 0.16, 0), mat_chrome)
+		_add_box(l_kat, Vector3(0.015, 0.18, 0.010), Vector3(0, 0.16, -0.022), mat_plasma)
 
-		if is_heirloom and lid == "lifeline":
-			var l_stick := Node3D.new()
-			l_stick.name = "LeftShockStick"
-			l_stick.position = Vector3(0.01, 0.02, -0.03)
-			l_stick.rotation = Vector3(0.35, 0.22, -0.18)
-			left_arm.add_child(l_stick)
-			_add_cyl(l_stick, 0.014, 0.016, 0.38, Vector3(0, 0.08, 0), mat_leather, Vector3.ZERO, 10)
-			_add_cyl(l_stick, 0.022, 0.018, 0.07, Vector3(0, -0.09, 0), mat_gold, Vector3.ZERO, 10)
-			_add_sphere(l_stick, 0.030, Vector3(0, 0.28, 0), mat_plasma)
-			_add_ring(l_stick, 0.034, 0.044, Vector3(0, 0.23, 0), mat_plasma, Vector3.ZERO, 16)
-		elif is_heirloom and lid == "ash":
-			var l_kat := Node3D.new()
-			l_kat.name = "LeftNunchakuSection"
-			l_kat.position = Vector3(0.01, 0.02, -0.03)
-			l_kat.rotation = Vector3(0.42, 0.25, -0.22)
-			left_arm.add_child(l_kat)
-			_add_cyl(l_kat, 0.015, 0.015, 0.20, Vector3(0, 0.02, 0), mat_leather, Vector3.ZERO, 10)
-			_add_box(l_kat, Vector3(0.012, 0.18, 0.034), Vector3(0, 0.16, 0), mat_chrome)
-			_add_box(l_kat, Vector3(0.015, 0.18, 0.010), Vector3(0, 0.16, -0.022), mat_plasma)
+	# 12-Legend Bespoke 1st-Person Forearm Gauntlets (matching 3rd-person `_add_Legend_forearm_gear_gen5`!)
+	match lid:
+		"wraith":
+			_add_box(left_arm, Vector3(0.086, 0.022, 0.14), Vector3(0.0, 0.038, 0.16), mat_void, Vector3.ZERO, "FP_VoidGauntlet")
+			_add_cyl(left_arm, 0.052, 0.052, 0.024, Vector3(0.0, 0.002, 0.15), mat_plasma, Vector3(PI * 0.5, 0, 0), 14, "FP_VoidCoil")
+		"pathfinder":
+			_add_cyl(left_arm, 0.028, 0.028, 0.14, Vector3(0.044, 0.018, 0.16), mat_chrome, Vector3(PI * 0.5, 0, 0), 10, "FP_GrappleWinch")
+			_add_cyl(left_arm, 0.032, 0.032, 0.026, Vector3(0.044, 0.018, 0.10), mat_hud, Vector3(PI * 0.5, 0, 0), 10, "FP_GrappleSpool")
+		"gibraltar":
+			_add_box(left_arm, Vector3(0.096, 0.082, 0.18), Vector3(0.0, 0.002, 0.18), mat_sleeve, Vector3.ZERO, "FP_GibbyBracerL")
+			_add_cyl(left_arm, 0.044, 0.044, 0.024, Vector3(-0.048, 0.014, 0.16), mat_hud, Vector3(0, 0, PI * 0.5), 14, "FP_GunShieldProjector")
+		"mirage":
+			_add_cyl(left_arm, 0.030, 0.030, 0.020, Vector3(-0.046, 0.016, 0.16), mat_hud, Vector3(0, 0, PI * 0.5), 12, "FP_HoloDiscL")
+		"bloodhound":
+			_add_box(left_arm, Vector3(0.086, 0.026, 0.10), Vector3(0.0, 0.038, 0.16), mat_gold, Vector3.ZERO, "FP_SonarBracer")
+			_add_box(left_arm, Vector3(0.068, 0.010, 0.072), Vector3(0.0, 0.048, 0.16), mat_plasma, Vector3.ZERO, "FP_SonarScreen")
+		"octane":
+			_add_cyl(left_arm, 0.012, 0.012, 0.18, Vector3(-0.044, 0.012, 0.16), mat_stim, Vector3(PI * 0.5, 0, 0), 10, "FP_StimTube")
+		_:
+			_add_box(left_arm, Vector3(0.082, 0.018, 0.12), Vector3(0.0, 0.036, 0.17), mat_trim, Vector3.ZERO, "FP_TacticalBracer")
 
-	if lid == "octane":
-		_add_cyl(left_arm, 0.008, 0.008, 0.18, Vector3(-0.04, 0.00, 0.16), mat_stim, Vector3(PI * 0.5, 0, 0))
-	elif lid == "wraith":
-		_add_box(left_arm, Vector3(0.082, 0.018, 0.12), Vector3(0.0, 0.032, 0.18), mat_void, Vector3.ZERO)
-	elif lid == "bloodhound":
-		_add_box(left_arm, Vector3(0.084, 0.024, 0.08), Vector3(0.0, 0.032, 0.16), mat_gold, Vector3.ZERO)
-
-	# 2. Right Arm (RightArmPivot) — Collinear Forearm + Elbow + UpperArm anchored to off-screen Right Shoulder!
+	# 2. Right Arm (`RightArmPivot`) — Authentic Sculpted 3D Character Right Arm, Palm & Trigger Finger!
 	var right_arm := Node3D.new()
 	right_arm.name = "RightArmPivot"
 	if is_heirloom:
@@ -330,30 +343,23 @@ static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is
 	elif is_bow:
 		right_arm.position = Vector3(0.03, -0.02, 0.10)
 	else:
-		right_arm.position = grip_prof.get("right_pos", Vector3(0.02, -0.10, rec_len * 0.22))
+		right_arm.position = grip_prof.get("right_pos", Vector3(0.02, -0.08, rec_len * 0.24))
 		right_arm.rotation = grip_prof.get("right_rot", Vector3.ZERO)
 	gun_rig.add_child(right_arm)
 
-	var r_sleeve_mat := mat_chrome if (lid == "pathfinder") else mat_sleeve
-	_add_capsule(right_arm, 0.041, 0.48, Vector3(0.0, -0.01, 0.25), r_sleeve_mat, Vector3(PI * 0.5, 0.0, 0.0), "RightForearm")
-	_add_cyl(right_arm, 0.045, 0.047, 0.18, Vector3(0.0, -0.01, 0.22), mat_trim, Vector3(PI * 0.5, 0.0, 0.0), 14, "RightVambrace")
-	_add_sphere(right_arm, 0.044, Vector3(0.0, -0.01, 0.47), mat_glove, "RightElbowJoint")
-	_add_capsule(right_arm, 0.045, 0.54, Vector3(0.08, -0.16, 0.66), r_sleeve_mat, Vector3(PI * 0.5 + 0.52, 0.28, 0.0), "RightUpperArm")
+	var sculpted_r_mesh: ArrayMesh = LegendRigBuilder.get_sculpted_fp_arm_mesh(is_female, false)
+	if sculpted_r_mesh != null:
+		var r_mi := MeshInstance3D.new()
+		r_mi.name = "SculptedRightArmMesh"
+		r_mi.mesh = sculpted_r_mesh
+		r_mi.set_surface_override_material(0, mat_prim)
+		if sculpted_r_mesh.get_surface_count() > 1:
+			r_mi.set_surface_override_material(1, mat_under)
+		right_arm.add_child(r_mi)
 
+	_add_box(right_arm, Vector3(0.080, 0.016, 0.12), Vector3(0.0, 0.036, 0.17), mat_trim, Vector3.ZERO, "FP_RightBracer")
 	if is_heirloom and lid == "pathfinder":
 		_build_boxing_glove_on_arm(right_arm, false, h_col)
-	else:
-		_add_sphere(right_arm, 0.036, Vector3(0.0, -0.008, 0.025), mat_glove, "RightWristJoint")
-		_add_box(right_arm, Vector3(0.076, 0.066, 0.086), Vector3.ZERO, mat_glove, Vector3.ZERO, "RightGloveHand")
-		_add_box(right_arm, Vector3(0.072, 0.016, 0.042), Vector3(0.0, 0.038, 0.0), mat_knuckle)
-		_add_capsule(right_arm, 0.012, 0.056, Vector3(-0.038, 0.008, -0.035), mat_leather, Vector3(0.45, -0.35, 0.35), "RightThumb")
-		if is_heirloom:
-			_add_capsule(right_arm, 0.010, 0.052, Vector3(0.005, 0.002, -0.028), mat_leather, Vector3(0.0, 0.0, 1.35), "TriggerFinger")
-		else:
-			_add_capsule(right_arm, 0.010, 0.062, Vector3(0.018, 0.005, -0.052), mat_leather, Vector3(PI * 0.45, -0.15, 0), "TriggerFinger")
-		for rfi in range(3):
-			var rf_y: float = -0.015 - float(rfi) * 0.016
-			_add_capsule(right_arm, 0.010, 0.052, Vector3(0.005, rf_y, -0.028), mat_leather, Vector3(0.0, 0.0, 1.35), "RightFinger%d" % rfi)
 
 	# 3. First-Person Kick Leg & Combat Boot (KickLegPivot - Visible during Airborne Flying Jump-Kick!)
 	var kick_leg := Node3D.new()
@@ -361,6 +367,9 @@ static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is
 	kick_leg.position = Vector3(0.0, -0.55, 0.25)
 	kick_leg.visible = false
 	gun_rig.add_child(kick_leg)
+	var r_sleeve_mat := mat_chrome if (lid == "pathfinder") else mat_sleeve
+	var mat_glove := _make_mat(Color("#0f172a"), 0.35, 0.55)
+	var mat_knuckle := _make_mat(Color("#475569"), 0.85, 0.20)
 	_add_capsule(kick_leg, 0.068, 0.44, Vector3(0, -0.04, 0.18), r_sleeve_mat, Vector3(PI * 0.46, 0, 0), "FP_ShinCore")
 	_add_cyl(kick_leg, 0.074, 0.064, 0.28, Vector3(0, -0.03, 0.16), mat_trim, Vector3(PI * 0.46, 0, 0), 12, "FP_ShinGreave")
 	_add_box(kick_leg, Vector3(0.12, 0.19, 0.09), Vector3(0, -0.02, -0.05), mat_glove, Vector3(-0.22, 0, 0), "FP_CombatBoot")

@@ -491,26 +491,70 @@ func _animate_viewmodel(delta: float) -> void:
 	if charm_node:
 		charm_node.visible = not player.is_ads and not is_healing and not is_climbing and not is_mantling
 
-	# Locomotion Figure-8 Bobbing & Dynamic Rotational Sway
-	var bob_x: float = cos(player.bob_time * 0.5) * (0.014 if sprinting else 0.006)
-	var bob_y: float = absf(sin(player.bob_time)) * (0.018 if sprinting else 0.007)
+	# =========================================================================
+	# AAA PROCEDURAL 1ST-PERSON WEAPON DYNAMICS (Apex Legends / Battlefield V / CS2):
+	# 1. Lissajous 2:1 Figure-8 Locomotion Bobbing + Breath Micro-Idling
+	# 2. Mouse-Look Rotational Inertia Sway & Barrel Axial Roll (`sway_offset`)
+	# 3. Horizontal Strafe Velocity Weapon Banking (`strafe_bank_z`)
+	# 4. Airborne Vertical Velocity Inertia Lag & Landing Knee-Compression Spring
+	# =========================================================================
+	var horiz_spd: float = Vector2(player.velocity.x, player.velocity.z).length()
+	var is_ground_moving: bool = horiz_spd > 0.65 and player.is_on_floor() and not player.is_sliding
+	var is_jogging: bool = is_ground_moving and (not sprinting) and horiz_spd > 4.5 and (not player.is_ads)
+	var breath_t: float = Time.get_ticks_msec() * 0.0018
+	var idle_breath_y: float = sin(breath_t) * 0.0022 if not player.is_ads else sin(breath_t) * 0.0006
+	var idle_breath_x: float = cos(breath_t * 0.5) * 0.0014 if not player.is_ads else 0.0
+	var bob_amp_x: float = 0.022 if sprinting else (0.011 if is_jogging else (0.006 if is_ground_moving else 0.0))
+	var bob_amp_y: float = 0.026 if sprinting else (0.013 if is_jogging else (0.007 if is_ground_moving else 0.0))
+	var bob_x: float = cos(player.bob_time * 0.5) * bob_amp_x + idle_breath_x
+	var bob_y: float = absf(sin(player.bob_time)) * bob_amp_y + idle_breath_y
 	if player.is_ads or player.is_sliding:
-		bob_x *= 0.16
-		bob_y *= 0.16
+		bob_x *= 0.15
+		bob_y *= 0.15
 
-	var sway_pos := Vector3(sway_offset.x, sway_offset.y, 0.0)
+	# Airborne Vertical Velocity Lag (Jump takeoff dips weapon slightly; falling lifts weapon slightly)
+	var air_vel_y: float = player.velocity.y if not player.is_on_floor() else 0.0
+	var air_lag_y: float = clampf(-air_vel_y * 0.0032, -0.038, 0.042) * (0.25 if player.is_ads else 1.0)
+	var air_lag_pitch: float = clampf(-air_vel_y * 0.012, -0.14, 0.16) * (0.25 if player.is_ads else 1.0)
+
+	# Local Horizontal Strafe Velocity Banking (CS2 / Apex Strafe Tilt)
+	var local_v: Vector3 = player.global_transform.basis.inverse() * Vector3(player.velocity.x, 0.0, player.velocity.z)
+	var strafe_norm: float = clampf(local_v.x / maxf(1.0, player.sprint_speed), -1.0, 1.0)
+	var strafe_bank_z: float = -strafe_norm * (0.022 if player.is_ads else 0.068)
+	var strafe_pos_x: float = -strafe_norm * (0.004 if player.is_ads else 0.014)
+
+	# Distinct Walking / Jogging / Sprinting 1st-Person Weapon Carry Offsets (`走路与跑步持枪姿态区分`)
+	var loco_carry_ofs := Vector3.ZERO
+	if sprinting and is_ground_moving and not is_heirloom and reload_timer <= 0.0 and not is_healing:
+		# Apex Cross-Chest Tactical Sprint Tuck + Rhythmic Stride Pump
+		loco_carry_ofs = Vector3(-0.052 + cos(player.bob_time * 0.5) * 0.018, -0.038 - absf(sin(player.bob_time)) * 0.014, 0.042)
+	elif is_jogging and not is_heirloom and reload_timer <= 0.0 and not is_healing:
+		# Tactical Ready Jog Carry (Slightly lowered CQB ready posture)
+		loco_carry_ofs = Vector3(-0.012, -0.016, 0.014)
+
+	var sway_pos := Vector3(sway_offset.x + strafe_pos_x, sway_offset.y + air_lag_y, 0.0)
 	if player.is_sliding and not is_healing and not player.is_ads:
 		base_pos += Vector3(-0.05, -0.03, 0.04)
 	if player.land_compress_timer > 0.0:
-		base_pos.y -= sin((player.land_compress_timer / 0.24) * PI) * 0.045
-	vm.position = vm.position.lerp(base_pos + Vector3(bob_x, -bob_y, 0) + kick_offset + sway_pos, delta * 18.0)
+		var land_w: float = sin((player.land_compress_timer / 0.24) * PI)
+		base_pos.y -= land_w * 0.052
+		base_pos.z += land_w * 0.018
+	vm.position = vm.position.lerp(base_pos + loco_carry_ofs + Vector3(bob_x, -bob_y, 0) + kick_offset + sway_pos, delta * 18.0)
 
 	var base_cant_rot: Vector3 = Vector3(0, 0, -0.24 if not player.is_ads else -0.08) if is_bow else (Vector3.ZERO if (player.is_ads or is_heirloom) else wep_vm_rot)
-	var target_rot := kick_rot + base_cant_rot + Vector3(sway_offset.y * 1.4, sway_offset.x * 1.8, 0.0)
+	var sway_rot := Vector3(sway_offset.y * 1.55 + air_lag_pitch, sway_offset.x * 1.95, sway_offset.x * 2.35 + strafe_bank_z)
+	var target_rot := kick_rot + base_cant_rot + sway_rot
+	if player.land_compress_timer > 0.0:
+		var land_r: float = sin((player.land_compress_timer / 0.24) * PI)
+		target_rot += Vector3(land_r * 0.11, 0.0, -land_r * 0.08)
 	if player.is_sliding and not is_healing:
 		target_rot += Vector3(0.16, 0.24, -0.46)
-	elif sprinting and not is_heirloom:
-		target_rot = grip_prof.get("sprint_rot", Vector3(0.24, 0.40, -0.24))
+	elif sprinting and is_ground_moving and not is_heirloom and reload_timer <= 0.0:
+		var spr_base: Vector3 = grip_prof.get("sprint_rot", Vector3(0.22, 0.44, -0.28))
+		var spr_wave := Vector3(sin(player.bob_time) * 0.075, cos(player.bob_time * 0.5) * 0.095, sin(player.bob_time * 0.5) * 0.070)
+		target_rot = spr_base + spr_wave + sway_rot * 0.5
+	elif is_jogging and not is_heirloom and reload_timer <= 0.0:
+		target_rot += Vector3(-0.035 + sin(player.bob_time) * 0.025, 0.06 + cos(player.bob_time * 0.5) * 0.03, -0.045)
 
 	var mag_pivot: Node3D = gun_rig.get_node_or_null("MagPivot")
 	var bolt_pivot: Node3D = gun_rig.get_node_or_null("BoltPivot")
@@ -1150,41 +1194,44 @@ func _animate_individual_weapon_reload(wid: String, p: float, base_mag_pos: Vect
 		"p2020":
 			cant_z = -0.52; cant_y = 0.20; pitch_x = 0.18; mag_drop_vec = Vector3(0.0, -0.22, 0.06)
 
-	var mag_end_p: float = 0.72 if is_empty_reload else 0.86
-	if p < 0.34:
-		var t1: float = p / 0.34
-		rot = Vector3(pitch_x * t1, cant_y * t1, cant_z * t1)
+	# 4-Phase S-Curve Tactical Reload Choreography (Inspection Cant -> Mag Strip -> Pouch Indexing & Palm Tap -> Bolt Rack):
+	var mag_end_p: float = 0.72 if is_empty_reload else 0.84
+	if p < 0.28:
+		var t1: float = smoothstep(0.0, 0.28, p)
+		var strip_jolt: float = sin(clampf((p - 0.10) / 0.16, 0.0, 1.0) * PI) * 0.06
+		rot = Vector3(pitch_x * t1 + strip_jolt, cant_y * t1, cant_z * t1)
 		if mag_pivot:
-			mag_pivot.position = base_mag_pos + mag_drop_vec * t1
-			mag_pivot.rotation.x = t1 * 0.55
+			mag_pivot.position = base_mag_pos + mag_drop_vec * (t1 * t1)
+			mag_pivot.rotation.x = t1 * 0.58
 		if left_arm:
-			left_arm.position = Vector3(-0.04 + mag_drop_vec.x * t1, -0.14 + mag_drop_vec.y * 0.65 * t1, base_mag_pos.z)
-			left_arm.rotation = Vector3(0.28 * t1, 0.22, -0.25 * t1)
+			left_arm.position = Vector3(-0.04 + mag_drop_vec.x * t1, -0.11 + mag_drop_vec.y * 0.72 * t1, base_mag_pos.z + 0.04 * t1)
+			left_arm.rotation = Vector3(0.34 * t1, 0.24 * t1, -0.28 * t1)
 	elif p < mag_end_p:
-		var t2: float = (p - 0.34) / (mag_end_p - 0.34)
-		var snap_t: float = clampf(t2 * 1.25, 0.0, 1.0)
-		var palm_bump: float = sin(clampf((t2 - 0.65) / 0.35, 0.0, 1.0) * PI) * 0.08
-		rot = Vector3(pitch_x - palm_bump, cant_y, cant_z)
+		var t2: float = (p - 0.28) / (mag_end_p - 0.28)
+		var snap_t: float = smoothstep(0.0, 0.78, t2)
+		var palm_tap: float = sin(clampf((t2 - 0.62) / 0.36, 0.0, 1.0) * PI) * 0.11
+		rot = Vector3(pitch_x - palm_tap * 1.15, cant_y * (1.0 - palm_tap * 0.4), cant_z + palm_tap * 0.35)
 		if mag_pivot:
 			mag_pivot.position = base_mag_pos.lerp(base_mag_pos + mag_drop_vec, 1.0 - snap_t)
-			mag_pivot.rotation.x = lerpf(0.50, 0.0, snap_t)
+			mag_pivot.rotation.x = lerpf(0.52, 0.0, snap_t)
 		if left_arm:
-			left_arm.position = Vector3(-0.02, lerpf(-0.34, -0.12 + palm_bump * 0.4, snap_t), base_mag_pos.z)
-			left_arm.rotation = Vector3(0.28 * (1.0 - snap_t), 0.25, -0.15)
+			left_arm.position = Vector3(-0.025, lerpf(-0.34, -0.10 + palm_tap * 0.45, snap_t), base_mag_pos.z)
+			left_arm.rotation = Vector3(0.32 * (1.0 - snap_t) + palm_tap * 0.5, 0.26, -0.16)
 	else:
 		var t3: float = (p - mag_end_p) / maxf(0.05, 1.0 - mag_end_p)
 		var pull: float = sin(t3 * PI)
-		rot = Vector3(0.14 * (1.0 - t3), -0.24 * pull, -0.44 * pull)
+		var settle: float = 1.0 - smoothstep(0.0, 1.0, t3)
+		rot = Vector3(pitch_x * 0.45 * settle + 0.12 * pull, cant_y * 0.4 * settle - 0.26 * pull, cant_z * 0.35 * settle - 0.46 * pull)
 		if mag_pivot:
 			mag_pivot.position = base_mag_pos
 			mag_pivot.rotation = Vector3.ZERO
 		if bolt_pivot:
-			bolt_pivot.position.z = -0.04 + pull * 0.13
+			bolt_pivot.position.z = -0.04 + pull * 0.135
 			if wid == "sentinel":
 				bolt_pivot.rotation.z = -pull * 0.88
 		if left_arm:
-			left_arm.position = Vector3(bolt_side_x, 0.02 * pull - 0.04, -0.08 + pull * 0.12)
-			left_arm.rotation = Vector3(0.35 * pull, 0.24 * pull, 0.0)
+			left_arm.position = Vector3(bolt_side_x, 0.025 * pull - 0.04, -0.08 + pull * 0.13)
+			left_arm.rotation = Vector3(0.38 * pull, 0.26 * pull, -0.12 * pull)
 	return rot
 
 
@@ -1318,9 +1365,11 @@ func _execute_single_shot(_enemies_list: Array, is_burst_followup: bool = false)
 	var tracking_speed: float = player.last_mouse_vel.length()
 	var recoil_smoothing: float = clampf(1.0 - tracking_speed * 0.042, 0.42, 1.0)
 
-	kick_offset = Vector3(0, 0.011, 0.048 if cat != "SHOTGUN" else 0.076) * rec_mult
-	kick_rot = Vector3(0.056 if cat != "SHOTGUN" else 0.098, randf_range(-0.014, 0.014), 0.0) * rec_mult
-	bolt_back_offset = 0.095
+	var is_heavy_cal: bool = (cat == "SHOTGUN" or cat == "SNIPER" or wid == "wingman")
+	kick_offset = Vector3(randf_range(-0.004, 0.004), -0.008 if player.is_ads else 0.012, 0.058 if not is_heavy_cal else 0.088) * rec_mult
+	kick_rot = Vector3(0.072 if not is_heavy_cal else 0.118, randf_range(-0.018, 0.018), randf_range(-0.042, 0.042)) * rec_mult
+	bolt_back_offset = 0.105
+	player.melee_fov_offset = clampf(player.melee_fov_offset - (1.15 if is_heavy_cal else 0.55), -2.4, 6.0)
 
 	var base_v_rec: float = float(wep.get("recoil_v", 0.012))
 	var base_h_rec: float = float(wep.get("recoil_h", 0.004))
