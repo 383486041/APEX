@@ -111,14 +111,9 @@ func _process(delta: float) -> void:
 	if PlayerState.double_time_timer > 0.0:
 		PlayerState.double_time_timer = maxf(0.0, PlayerState.double_time_timer - delta)
 
-	# 2. Tick Healing Cast Timer (Key 4) + Progressive Acoustic Feedback
+	# 2. Tick Healing Cast Timer (Key 4)
 	if PlayerState.heal_cast_timer > 0.0:
 		PlayerState.heal_cast_timer -= delta
-		heal_audio_tick += delta
-		if heal_audio_tick >= 0.42:
-			heal_audio_tick = 0.0
-			var prog: float = 1.0 - clampf(PlayerState.heal_cast_timer / maxf(0.1, PlayerState.heal_cast_total), 0.0, 1.0)
-			AudioSynthesizer.play_consumable_progress(PlayerState.active_heal_id, prog)
 		if PlayerState.heal_cast_timer <= 0.0:
 			PlayerState.heal_cast_timer = 0.0
 			_complete_heal_item()
@@ -386,6 +381,7 @@ func use_tactical() -> void:
 		return
 
 	PlayerState.heal_cast_timer = 0.0
+	AudioSynthesizer.stop_heal_sound()
 
 	var leg: Dictionary = GameData.get_legend_by_id(PlayerState.selected_legend_id)
 	var lid: String = str(leg["id"])
@@ -490,6 +486,7 @@ func use_ultimate() -> void:
 		return
 	PlayerState.ult_charge = 0.0
 	PlayerState.heal_cast_timer = 0.0
+	AudioSynthesizer.stop_heal_sound()
 
 	var leg: Dictionary = GameData.get_legend_by_id(PlayerState.selected_legend_id)
 	var lid: String = str(leg["id"])

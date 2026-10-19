@@ -433,6 +433,7 @@ func _physics_process(delta: float) -> void:
 				active_heal_type = "shield_cell"
 				heal_timer = 3.0
 			heal_fx_mesh.visible = true
+			AudioSynthesizer.play_bot_heal_start(active_heal_type, global_position)
 			_update_overhead_label()
 
 		if ai_state == "SEEK_COVER_HEAL":
@@ -458,7 +459,7 @@ func _physics_process(delta: float) -> void:
 					shield = minf(max_shield, shield + 25.0)
 				ai_state = "STRAFE_DUEL"
 				heal_fx_mesh.visible = false
-				AudioSynthesizer.play_consumable_complete(active_heal_type)
+				AudioSynthesizer.play_bot_heal_complete(active_heal_type, global_position)
 				_update_overhead_label()
 		elif ai_state == "ESCAPE_STORM":
 			is_moving = true

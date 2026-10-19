@@ -191,22 +191,6 @@ func _preload_authentic_soundbank() -> void:
 			if s != null:
 				sfx_cache[key] = s
 
-	# Preload authentic hitmarker WAVs
-	var h_shield_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Shield.wav"
-	if ResourceLoader.exists(h_shield_path):
-		var sh: AudioStream = load(h_shield_path)
-		if sh != null: sfx_cache["hit_shield"] = sh
-
-	var h_flesh_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Flesh.wav"
-	if ResourceLoader.exists(h_flesh_path):
-		var fl: AudioStream = load(h_flesh_path)
-		if fl != null: sfx_cache["hit_flesh"] = fl
-
-	var h_hs_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Headshot.wav"
-	if ResourceLoader.exists(h_hs_path):
-		var hs: AudioStream = load(h_hs_path)
-		if hs != null: sfx_cache["hit_headshot"] = hs
-
 func get_sfx(key: String) -> AudioStream:
 	if sfx_cache.has(key):
 		return sfx_cache[key]
@@ -400,6 +384,11 @@ func _prebake_core_soundbank() -> void:
 		{"f_start": 225.0, "f_end": 58.0, "dur": 0.09, "decay": 6.8, "noise": 0.45, "lp_cutoff": 950.0, "vol": 0.68, "wave": "tri"},
 		{"f_start": 620.0, "f_end": 180.0, "dur": 0.05, "decay": 10.0, "noise": 0.35, "lp_cutoff": 1800.0, "vol": 0.38}
 	])
+	wav_cache["headshot_ding"] = _build_layered_wav(0.22, [
+		{"f_start": 3520.0, "f_end": 3520.0, "dur": 0.20, "decay": 6.0, "noise": 0.02, "lp_cutoff": 9000.0, "vol": 0.70, "wave": "sine"},
+		{"f_start": 5274.0, "f_end": 5274.0, "dur": 0.18, "decay": 7.5, "noise": 0.01, "lp_cutoff": 9500.0, "vol": 0.55, "wave": "sine"},
+		{"f_start": 1760.0, "f_end": 2640.0, "dur": 0.05, "decay": 12.0, "noise": 0.15, "lp_cutoff": 6000.0, "vol": 0.40, "wave": "metallic"}
+	])
 	wav_cache["shield_crack"] = _build_layered_wav(0.42, [
 		{"f_start": 2850.0, "f_end": 1180.0, "dur": 0.16, "decay": 5.5, "noise": 0.65, "lp_cutoff": 8500.0, "vol": 0.85, "wave": "metallic", "mod_freq": 280.0, "mod_depth": 0.25},
 		{"delay": 0.03, "f_start": 2150.0, "f_end": 240.0, "dur": 0.28, "decay": 4.2, "noise": 0.42, "lp_cutoff": 5200.0, "vol": 0.78, "wave": "saw", "mod_freq": 110.0, "mod_depth": 0.22},
@@ -514,47 +503,80 @@ func play_heal_start(heal_id: String) -> void:
 	if muted:
 		return
 	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
+	if is_shield:
+		var s: AudioStream = get_sfx("shield_cell")
+		if s != null and is_instance_valid(heal_channel):
+			heal_channel.stream = s
+			heal_channel.pitch_scale = 1.0
+			heal_channel.volume_db = 1.5
+			heal_channel.play()
+			return
 	var stream: AudioStreamWAV = wav_cache.get("battery_start") if is_shield else wav_cache.get("syringe_start")
-	if stream:
+	if stream and is_instance_valid(heal_channel):
 		heal_channel.stream = stream
 		heal_channel.pitch_scale = 1.0
+		heal_channel.volume_db = 1.0
 		heal_channel.play()
 
-func play_heal_progress_pulse(heal_id: String, progress: float) -> void:
-	if muted:
-		return
-	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
-	if is_shield:
-		var f0: float = lerpf(440.0, 1680.0, clampf(progress, 0.0, 1.0))
-		var pulse_wav := _build_layered_wav(0.18, [
-			{"f_start": f0, "f_end": f0 + 95.0, "dur": 0.17, "decay": 3.5, "noise": 0.08, "lp_cutoff": 5800.0, "vol": 0.36, "wave": "saw", "mod_freq": 42.0, "mod_depth": 0.10},
-			{"f_start": 980.0, "f_end": 1240.0, "dur": 0.04, "decay": 12.0, "noise": 0.15, "lp_cutoff": 4800.0, "vol": 0.25, "wave": "metallic"}
-		])
-		heal_channel.stream = pulse_wav
-		heal_channel.play()
-	else:
-		var pulse_wav := _build_layered_wav(0.16, [
-			{"f_start": 920.0, "f_end": 640.0, "dur": 0.14, "decay": 5.5, "noise": 0.65, "lp_cutoff": 2800.0, "vol": 0.32},
-			{"f_start": 740.0 + progress * 420.0, "f_end": 740.0 + progress * 420.0, "dur": 0.06, "decay": 8.0, "noise": 0.02, "lp_cutoff": 4500.0, "vol": 0.28, "wave": "sine"}
-		])
-		heal_channel.stream = pulse_wav
-		heal_channel.play()
+func play_heal_progress_pulse(_heal_id: String, _progress: float) -> void:
+	# Keep authentic battery/syringe stream playing cleanly without jitter or delay!
+	pass
 
 func play_heal_complete(heal_id: String) -> void:
 	if muted:
 		return
-	if heal_id == "shield_cell":
-		var s: AudioStream = get_sfx("shield_cell")
-		if s != null:
-			_play_stream(s, 1.0, 0.0)
-			return
+	stop_heal_sound()
 	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
+	if is_shield:
+		var evo_s: AudioStream = get_sfx("evo_shield")
+		if evo_s != null:
+			_play_stream(evo_s, 1.0, 2.8)
+			return
 	var stream: AudioStreamWAV = wav_cache.get("battery_complete") if is_shield else wav_cache.get("medkit_complete")
-	_play_wav(stream, 1.0, -0.5)
+	if stream != null:
+		_play_wav(stream, 1.0, 1.5)
 
 func stop_heal_sound() -> void:
 	if is_instance_valid(heal_channel) and heal_channel.playing:
 		heal_channel.stop()
+
+func play_bot_heal_start(heal_id: String, bot_pos: Vector3) -> void:
+	if muted:
+		return
+	var p_cam: Camera3D = null
+	var vp := get_viewport()
+	if vp:
+		p_cam = vp.get_camera_3d()
+	if p_cam == null:
+		return
+	var dist: float = bot_pos.distance_to(p_cam.global_position)
+	if dist > 18.0:
+		return # AI healing is completely silent beyond 18 meters
+	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
+	var s: AudioStream = get_sfx("shield_cell") if is_shield else wav_cache.get("syringe_start")
+	if s == null:
+		return
+	var vol_db: float = lerpf(-10.0, -32.0, dist / 18.0)
+	_play_stream(s, randf_range(0.96, 1.04), vol_db)
+
+func play_bot_heal_complete(heal_id: String, bot_pos: Vector3) -> void:
+	if muted:
+		return
+	var p_cam: Camera3D = null
+	var vp := get_viewport()
+	if vp:
+		p_cam = vp.get_camera_3d()
+	if p_cam == null:
+		return
+	var dist: float = bot_pos.distance_to(p_cam.global_position)
+	if dist > 18.0:
+		return
+	var is_shield: bool = (heal_id == "shield_battery" or heal_id == "shield_cell" or heal_id == "phoenix_kit")
+	var s: AudioStream = get_sfx("evo_shield") if is_shield else wav_cache.get("medkit_complete")
+	if s == null:
+		return
+	var vol_db: float = lerpf(-8.0, -30.0, dist / 18.0)
+	_play_stream(s, 1.0, vol_db)
 
 func play_footstep(is_sprinting: bool = false) -> void:
 	_play_wav(wav_cache.get("footstep"), randf_range(0.92, 1.12) * (1.12 if is_sprinting else 1.0), -5.0 if not is_sprinting else -3.0)
@@ -572,7 +594,7 @@ func play_armor_hit(evo_level: int = 2, is_headshot: bool = false, combo_hits: i
 	if muted:
 		return
 	var p_scale: float = clampf(1.0 + float(combo_hits) * 0.025 + float(evo_level) * 0.03, 0.9, 1.4)
-	var s: AudioStream = sfx_cache.get("hit_shield", wav_cache.get("armor_hit"))
+	var s: AudioStream = wav_cache.get("armor_hit")
 	if s and is_instance_valid(hit_channel):
 		hit_channel.stream = s
 		hit_channel.pitch_scale = p_scale
@@ -586,7 +608,7 @@ func play_armor_hit(evo_level: int = 2, is_headshot: bool = false, combo_hits: i
 func play_flesh_hit(is_headshot: bool = false) -> void:
 	if muted:
 		return
-	var s: AudioStream = sfx_cache.get("hit_flesh", wav_cache.get("flesh_hit"))
+	var s: AudioStream = wav_cache.get("flesh_hit")
 	if s and is_instance_valid(hit_channel):
 		hit_channel.stream = s
 		hit_channel.pitch_scale = randf_range(0.98, 1.04)
@@ -600,7 +622,7 @@ func play_flesh_hit(is_headshot: bool = false) -> void:
 func play_headshot_ding() -> void:
 	if muted:
 		return
-	var s: AudioStream = sfx_cache.get("hit_headshot")
+	var s: AudioStream = wav_cache.get("headshot_ding")
 	if s and is_instance_valid(hit_headshot_channel):
 		hit_headshot_channel.stream = s
 		hit_headshot_channel.pitch_scale = randf_range(0.99, 1.02)
@@ -638,23 +660,23 @@ func play_bot_gunshot(wid: String, bot_pos: Vector3) -> void:
 func play_shield_crack() -> void:
 	var s: AudioStream = get_sfx("shield_crack")
 	if s != null:
-		_play_stream(s, 1.0, 1.0)
+		_play_stream(s, 1.0, 3.2) # +20% volume boost
 	else:
-		_play_wav(wav_cache.get("shield_crack"), 1.0, 0.5)
+		_play_wav(wav_cache.get("shield_crack"), 1.0, 2.0)
 
 func play_knockdown() -> void:
 	var s: AudioStream = get_sfx("knockdown")
 	if s != null:
-		_play_stream(s, 1.0, 1.2)
+		_play_stream(s, 1.0, 3.5) # +20% volume boost
 	else:
-		_play_wav(wav_cache.get("kill_confirmed"), 0.92, 0.0)
+		_play_wav(wav_cache.get("kill_confirmed"), 0.92, 2.0)
 
 func play_kill_confirmed() -> void:
 	var s: AudioStream = get_sfx("knockdown")
 	if s != null:
-		_play_stream(s, 1.0, 1.0)
+		_play_stream(s, 1.0, 3.2) # +20% volume boost
 	else:
-		_play_wav(wav_cache.get("kill_confirmed"), 1.0, 0.5)
+		_play_wav(wav_cache.get("kill_confirmed"), 1.0, 2.0)
 
 func play_ping() -> void:
 	var s: AudioStream = get_sfx("ping")

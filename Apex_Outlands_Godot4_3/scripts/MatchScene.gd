@@ -599,6 +599,7 @@ func _process(delta: float) -> void:
 		if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 			if PlayerState.heal_cast_timer > 0.0:
 				PlayerState.heal_cast_timer = 0.0
+				AudioSynthesizer.stop_heal_sound()
 				_on_toast_pushed("⚠️ 开火打断了恢复品使用！", "warn")
 			else:
 				weapon_ctrl.try_fire(enemies)
@@ -610,16 +611,25 @@ func _process(delta: float) -> void:
 			else:
 				inventory_ui.open()
 	elif _is_key_just_pressed(KEY_1):
+		if PlayerState.heal_cast_timer > 0.0:
+			PlayerState.heal_cast_timer = 0.0
+			AudioSynthesizer.stop_heal_sound()
 		PlayerState.active_slot = 0
 		weapon_ctrl.reload_timer = 0.0
 		player.rebuild_viewmodel()
 		_refresh_hud()
 	elif _is_key_just_pressed(KEY_2):
+		if PlayerState.heal_cast_timer > 0.0:
+			PlayerState.heal_cast_timer = 0.0
+			AudioSynthesizer.stop_heal_sound()
 		PlayerState.active_slot = 1
 		weapon_ctrl.reload_timer = 0.0
 		player.rebuild_viewmodel()
 		_refresh_hud()
 	elif _is_key_just_pressed(KEY_3):
+		if PlayerState.heal_cast_timer > 0.0:
+			PlayerState.heal_cast_timer = 0.0
+			AudioSynthesizer.stop_heal_sound()
 		PlayerState.active_slot = 2
 		weapon_ctrl.reload_timer = 0.0
 		player.rebuild_viewmodel()
