@@ -361,9 +361,6 @@ static func _build_tactical_fp_arms(gun_rig: Node3D, legend_data: Dictionary, is
 	kick_leg.position = Vector3(0.0, -0.55, 0.25)
 	kick_leg.visible = false
 	gun_rig.add_child(kick_leg)
-	var r_sleeve_mat := mat_chrome if (lid == "pathfinder") else mat_sleeve
-	var mat_glove := _make_mat(Color("#0f172a"), 0.35, 0.55)
-	var mat_knuckle := _make_mat(Color("#475569"), 0.85, 0.20)
 	_add_capsule(kick_leg, 0.068, 0.44, Vector3(0, -0.04, 0.18), r_sleeve_mat, Vector3(PI * 0.46, 0, 0), "FP_ShinCore")
 	_add_cyl(kick_leg, 0.074, 0.064, 0.28, Vector3(0, -0.03, 0.16), mat_trim, Vector3(PI * 0.46, 0, 0), 12, "FP_ShinGreave")
 	_add_box(kick_leg, Vector3(0.12, 0.19, 0.09), Vector3(0, -0.02, -0.05), mat_glove, Vector3(-0.22, 0, 0), "FP_CombatBoot")

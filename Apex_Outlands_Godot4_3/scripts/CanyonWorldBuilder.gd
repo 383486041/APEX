@@ -347,16 +347,10 @@ static func build_canyon_world(parent: Node3D) -> Dictionary:
 		stand.position = Vector3(rx, 0.0, rz)
 		parent.add_child(stand)
 
-		var gun_preview := WeaponMeshBuilder.create_viewmodel(w, false, {}, "2x_bruiser")
+		var gun_preview := WeaponMeshBuilder.create_third_person_weapon_mesh(w)
 		gun_preview.position = Vector3(0, 1.34, 0)
 		gun_preview.rotation = Vector3(0, PI * 0.5, 0)
 		gun_preview.scale = Vector3(1.12, 1.12, 1.12)
-		var l_arm := gun_preview.get_node_or_null("GunRig/LeftArmPivot")
-		var r_arm := gun_preview.get_node_or_null("GunRig/RightArmPivot")
-		if l_arm:
-			l_arm.visible = false
-		if r_arm:
-			r_arm.visible = false
 		stand.add_child(gun_preview)
 
 		var lbl := Label3D.new()

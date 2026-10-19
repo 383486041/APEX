@@ -428,6 +428,11 @@ var victory_stats_lbl: Label
 var simulated_skirmish_timer: float = 6.5
 
 var prev_keys: Dictionary = {}
+var last_focused_interactable_node: Node3D = null
+var current_near_interactable: Dictionary = {}
+var hud_threat_timer: float = 0.0
+var cached_threat_dist: float = 32.0
+var cached_locked_threat: bool = false
 
 func _ready() -> void:
 	PlayerState.reset_for_match()
@@ -451,6 +456,10 @@ func _ready() -> void:
 	sun.position = Vector3(120, 220, 90)
 	sun.rotation_degrees = Vector3(-52, 35, 0)
 	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 68.0
+	sun.directional_shadow_split_1 = 0.15
+	sun.directional_shadow_split_2 = 0.35
+	sun.directional_shadow_split_3 = 0.65
 	sun.light_energy = 1.25
 
 	var built: Dictionary = CanyonWorldBuilder.build_canyon_world(self)
@@ -668,7 +677,9 @@ func _process(delta: float) -> void:
 		BehaviorRecorder.train_ai_from_records()
 		BehaviorRecorder.use_imitation_ai = true
 
-	var near_it: Dictionary = _find_nearest_interactable()
+	_update_realtime_hud(delta)
+
+	var near_it: Dictionary = current_near_interactable
 	if not near_it.is_empty() and str(near_it.get("type", "")) == "deathbox":
 		if Input.is_key_pressed(KEY_E):
 			if is_instance_valid(authentic_hud):
@@ -702,8 +713,6 @@ func _process(delta: float) -> void:
 			_on_toast_pushed("🖱️ 鼠标已解锁（点击画面重新锁定准星，或点击右上角返回大厅）", "info")
 		else:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-
-	_update_realtime_hud()
 
 func _try_interact() -> void:
 	var p_pos: Vector3 = player.global_position
@@ -1544,7 +1553,7 @@ func _refresh_hud() -> void:
 	if is_instance_valid(authentic_hud):
 		authentic_hud.queue_redraw()
 
-func _update_realtime_hud() -> void:
+func _update_realtime_hud(delta: float = 0.016) -> void:
 	if scope_hit_hud != null:
 		var want_ads: bool = (player.is_ads and PlayerState.active_slot != 2 and weapon_ctrl.reload_timer <= 0.0 and PlayerState.heal_cast_timer <= 0.0)
 		var cur_op: String = str(PlayerState.loadout[clampi(PlayerState.active_slot, 0, 1)].get("optic", "2x_bruiser"))
@@ -1552,22 +1561,28 @@ func _update_realtime_hud() -> void:
 		var cam: Camera3D = player.camera
 		var p_pos: Vector3 = cam.global_position
 		var fwd: Vector3 = -cam.global_transform.basis.z
-		var min_d: float = 999.0
-		var locked_threat: bool = false
-		for bot in enemies:
-			if not is_instance_valid(bot) or bot.hp <= 0.0:
-				continue
-			var to_bot: Vector3 = (bot.global_position + Vector3(0, 1.25, 0)) - p_pos
-			var d: float = to_bot.length()
-			if d < min_d:
-				min_d = d
-			if fwd.angle_to(to_bot.normalized()) < (0.12 if d < 30.0 else 0.065):
-				locked_threat = true
-			if want_ads and cur_op == "1x_threat":
-				bot.set_scanned(0.25)
 
-		scope_hit_hud.target_dist_m = min_d if min_d < 500.0 else 32.0
-		scope_hit_hud.is_threat_locked = locked_threat
+		hud_threat_timer -= delta
+		if hud_threat_timer <= 0.0:
+			hud_threat_timer = 0.08
+			var min_d: float = 999.0
+			var locked_threat: bool = false
+			for bot in enemies:
+				if not is_instance_valid(bot) or bot.hp <= 0.0:
+					continue
+				var to_bot: Vector3 = (bot.global_position + Vector3(0, 1.25, 0)) - p_pos
+				var d: float = to_bot.length()
+				if d < min_d:
+					min_d = d
+				if fwd.angle_to(to_bot.normalized()) < (0.12 if d < 30.0 else 0.065):
+					locked_threat = true
+				if want_ads and cur_op == "1x_threat":
+					bot.set_scanned(0.25)
+			cached_threat_dist = min_d if min_d < 500.0 else 32.0
+			cached_locked_threat = locked_threat
+
+		scope_hit_hud.target_dist_m = cached_threat_dist
+		scope_hit_hud.is_threat_locked = cached_locked_threat
 		scope_hit_hud.bow_draw_ratio = weapon_ctrl.bow_draw_progress
 		scope_hit_hud.choke_ratio = weapon_ctrl.choke_progress
 		scope_hit_hud.repeater_charge_ratio = weapon_ctrl.repeater_charge
@@ -1589,14 +1604,19 @@ func _update_realtime_hud() -> void:
 			hud_reload_lbl.text = ""
 
 	var near: Dictionary = _find_nearest_interactable()
+	current_near_interactable = near
 	var best_node: Node3D = near.get("node") if not near.is_empty() else null
 
-	for it in interactables:
-		var it_node: Node3D = it.get("node")
-		if is_instance_valid(it_node):
-			var lbl: Label3D = it_node.get_node_or_null("ItemLabel3D") as Label3D
-			if lbl:
-				lbl.visible = (it_node == best_node)
+	if best_node != last_focused_interactable_node:
+		if is_instance_valid(last_focused_interactable_node):
+			var prev_lbl: Label3D = last_focused_interactable_node.get_node_or_null("ItemLabel3D") as Label3D
+			if prev_lbl:
+				prev_lbl.visible = false
+		if is_instance_valid(best_node):
+			var cur_lbl: Label3D = best_node.get_node_or_null("ItemLabel3D") as Label3D
+			if cur_lbl:
+				cur_lbl.visible = true
+		last_focused_interactable_node = best_node
 
 	if not near.is_empty():
 		var itype: String = str(near.get("type", ""))

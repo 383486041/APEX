@@ -84,6 +84,7 @@ var zipline_end: Vector3 = Vector3.ZERO
 var zipline_t: float = 0.0
 
 func _ready() -> void:
+	add_to_group("player")
 	collision_layer = 2
 	collision_mask = 1
 	floor_snap_length = 0.35

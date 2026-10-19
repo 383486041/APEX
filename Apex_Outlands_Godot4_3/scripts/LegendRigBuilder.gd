@@ -220,6 +220,12 @@ static func _instantiate_character_model(is_female: bool) -> Node3D:
 			if doc.append_from_file(ProjectSettings.globalize_path(p), state) == OK:
 				var gen := doc.generate_scene(state) as Node3D
 				if gen != null:
+					var ps := PackedScene.new()
+					if ps.pack(gen) == OK:
+						if is_female and "Mannequin_F" in p:
+							_female_packed = ps
+						elif "UAL1_Standard" in p:
+							_male_packed = ps
 					return gen
 	return null
 
@@ -569,6 +575,23 @@ static func create_legend_rig(legend_data: Dictionary, weapon_id: String = "r301
 			lhand_att.add_child(heal_prop)
 			_add_cyl(heal_prop, 0.052, 0.052, 0.18, Vector3.ZERO, mat_dark, Vector3.ZERO, 12, "TP_BatteryBody")
 			_add_cyl(heal_prop, 0.045, 0.045, 0.11, Vector3.ZERO, mat_glow, Vector3.ZERO, 12, "TP_BatteryCore")
+
+			var cached_parts: Dictionary = {
+				"skel": skel,
+				"held_wep": held_wep_root,
+				"held_hl": held_hl_root,
+				"held_left_hl": held_left_hl,
+				"back_holster": back_holster,
+				"heal_prop": heal_prop,
+				"head_att": head_att,
+				"chest_att": chest_att,
+				"pelvis_att": pelvis_att,
+				"uarm_l": uarm_l,
+				"uarm_r": uarm_r,
+				"jet_l": ual_model.find_child("JumpkitJetL", true, false),
+				"jet_r": ual_model.find_child("JumpkitJetR", true, false)
+			}
+			root.set_meta("cached_parts", cached_parts)
 
 	return root
 
@@ -952,10 +975,29 @@ static func animate_rig(rig: Node3D, delta: float, s: Dictionary = {}) -> void:
 	if ual_model == null:
 		return
 
-	var skels := ual_model.find_children("*", "Skeleton3D", true, false)
-	var skel: Skeleton3D = (skels[0] as Skeleton3D) if not skels.is_empty() else null
+	var parts: Dictionary = rig.get_meta("cached_parts", {})
+	var skel: Skeleton3D = parts.get("skel") as Skeleton3D
 	if skel == null:
-		return
+		var skels := ual_model.find_children("*", "Skeleton3D", true, false)
+		skel = (skels[0] as Skeleton3D) if not skels.is_empty() else null
+		if skel == null:
+			return
+		parts = {
+			"skel": skel,
+			"held_wep": ual_model.find_child("HeldWeaponRoot", true, false),
+			"held_hl": ual_model.find_child("HeldHeirloomRoot", true, false),
+			"held_left_hl": ual_model.find_child("HeldLeftHeirloomRoot", true, false),
+			"back_holster": ual_model.find_child("BackHolsterRoot", true, false),
+			"heal_prop": ual_model.find_child("HealPropRoot", true, false),
+			"jet_l": ual_model.find_child("JumpkitJetL", true, false),
+			"jet_r": ual_model.find_child("JumpkitJetR", true, false),
+			"head_att": ual_model.find_child("HeadBoneAttachment", true, false),
+			"chest_att": ual_model.find_child("ChestBoneAttachment", true, false),
+			"pelvis_att": ual_model.find_child("PelvisBoneAttachment", true, false),
+			"uarm_l": ual_model.find_child("LeftUpperArmAttachment", true, false),
+			"uarm_r": ual_model.find_child("RightUpperArmAttachment", true, false)
+		}
+		rig.set_meta("cached_parts", parts)
 
 	var bone_map: PackedInt32Array
 	if rig.has_meta("bone_map"):
@@ -1001,18 +1043,18 @@ static func animate_rig(rig: Node3D, delta: float, s: Dictionary = {}) -> void:
 	ual_model.scale = target_scale
 
 	# 1. Toggle Held Firearm / Held Heirloom / Dual-Wield Left Heirloom / Back Holster / Heal Prop / Body Attachments
-	var held_wep: Node3D = ual_model.find_child("HeldWeaponRoot", true, false) as Node3D
-	var held_hl: Node3D = ual_model.find_child("HeldHeirloomRoot", true, false) as Node3D
-	var held_left_hl: Node3D = ual_model.find_child("HeldLeftHeirloomRoot", true, false) as Node3D
-	var back_holster: Node3D = ual_model.find_child("BackHolsterRoot", true, false) as Node3D
-	var heal_prop: Node3D = ual_model.find_child("HealPropRoot", true, false) as Node3D
-	var jet_l: Node3D = ual_model.find_child("JumpkitJetL", true, false) as Node3D
-	var jet_r: Node3D = ual_model.find_child("JumpkitJetR", true, false) as Node3D
-	var head_att: Node3D = ual_model.find_child("HeadBoneAttachment", true, false) as Node3D
-	var chest_att: Node3D = ual_model.find_child("ChestBoneAttachment", true, false) as Node3D
-	var pelvis_att: Node3D = ual_model.find_child("PelvisBoneAttachment", true, false) as Node3D
-	var uarm_l: Node3D = ual_model.find_child("LeftUpperArmAttachment", true, false) as Node3D
-	var uarm_r: Node3D = ual_model.find_child("RightUpperArmAttachment", true, false) as Node3D
+	var held_wep: Node3D = parts.get("held_wep") as Node3D
+	var held_hl: Node3D = parts.get("held_hl") as Node3D
+	var held_left_hl: Node3D = parts.get("held_left_hl") as Node3D
+	var back_holster: Node3D = parts.get("back_holster") as Node3D
+	var heal_prop: Node3D = parts.get("heal_prop") as Node3D
+	var jet_l: Node3D = parts.get("jet_l") as Node3D
+	var jet_r: Node3D = parts.get("jet_r") as Node3D
+	var head_att: Node3D = parts.get("head_att") as Node3D
+	var chest_att: Node3D = parts.get("chest_att") as Node3D
+	var pelvis_att: Node3D = parts.get("pelvis_att") as Node3D
+	var uarm_l: Node3D = parts.get("uarm_l") as Node3D
+	var uarm_r: Node3D = parts.get("uarm_r") as Node3D
 
 	var hands_busy: bool = (is_healing or is_wall_climbing or is_mantling)
 	if held_wep:

@@ -70,6 +70,11 @@ var death_collapse_timer: float = 0.0
 var dying_weapon_name: String = ""
 var squad_id: int = 1
 
+var _cached_player: PlayerController = null
+var _los_timer: float = 0.0
+var _cached_has_los: bool = false
+var _anim_lod_timer: float = 0.0
+
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1
@@ -294,18 +299,24 @@ func _physics_process(delta: float) -> void:
 			spawn_origin = global_position
 			_update_overhead_label()
 
-	var player_node: PlayerController = null
-	if get_parent():
-		for c in get_parent().get_children():
-			if c is PlayerController:
-				player_node = c
-				break
+	if not is_instance_valid(_cached_player):
+		_cached_player = get_tree().get_first_node_in_group("player") as PlayerController
+		if _cached_player == null and get_parent():
+			for c in get_parent().get_children():
+				if c is PlayerController:
+					_cached_player = c
+					break
+	var player_node: PlayerController = _cached_player
 
 	var dist_to_player: float = 999.0
 	var has_los: bool = false
 	if player_node != null:
 		dist_to_player = global_position.distance_to(player_node.global_position)
-		has_los = _has_line_of_sight_to_player(player_node)
+		_los_timer -= delta
+		if _los_timer <= 0.0:
+			_los_timer = randf_range(0.10, 0.18)
+			_cached_has_los = _has_line_of_sight_to_player(player_node)
+		has_los = _cached_has_los
 		var dy: float = (player_node.global_position.y + 1.35) - (global_position.y + 1.45)
 		aim_pitch = clampf(atan2(dy, maxf(1.0, dist_to_player)), -0.65, 0.65)
 
@@ -505,7 +516,22 @@ func _physics_process(delta: float) -> void:
 	velocity.z = lerpf(velocity.z, desired_vel_xz.z, delta * 8.5)
 	move_and_slide()
 
-	_animate_rig_limbs(delta, is_moving and Vector2(velocity.x, velocity.z).length() > 0.5, is_crouching)
+	var should_animate: bool = true
+	if dist_to_player > 55.0:
+		_anim_lod_timer += delta
+		if _anim_lod_timer < 0.08:
+			should_animate = false
+		else:
+			_anim_lod_timer = 0.0
+	elif dist_to_player > 28.0:
+		_anim_lod_timer += delta
+		if _anim_lod_timer < 0.04:
+			should_animate = false
+		else:
+			_anim_lod_timer = 0.0
+
+	if should_animate:
+		_animate_rig_limbs(delta, is_moving and Vector2(velocity.x, velocity.z).length() > 0.5, is_crouching)
 
 func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> void:
 	if rig_node == null:
