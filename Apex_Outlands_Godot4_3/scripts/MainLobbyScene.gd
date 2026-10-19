@@ -52,7 +52,7 @@ func _ready() -> void:
 	var all_args: Array = OS.get_cmdline_args()
 	all_args.append_array(OS.get_cmdline_user_args())
 	for a in all_args:
-		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm" or a == "--test-fp-gun":
+		if a == "--test-inventory" or a == "--test-victory" or a == "--test-storm":
 			get_tree().change_scene_to_file.call_deferred("res://scenes/MatchWorld.tscn")
 			return
 
