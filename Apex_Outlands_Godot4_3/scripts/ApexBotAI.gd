@@ -71,11 +71,16 @@ var dying_weapon_name: String = ""
 var squad_id: int = 1
 
 var _cached_player: PlayerController = null
+var current_target: Node3D = null
+var _target_scan_timer: float = 0.0
+var alert_reaction_timer: float = 0.0
+var last_damage_from: Vector3 = Vector3.ZERO
 var _los_timer: float = 0.0
 var _cached_has_los: bool = false
 var _anim_lod_timer: float = 0.0
 
 func _ready() -> void:
+	add_to_group("bots")
 	collision_layer = 4
 	collision_mask = 1
 	floor_snap_length = 0.35
@@ -178,14 +183,89 @@ func _update_overhead_label() -> void:
 	status_lbl.text = "%s%s\n[护盾 %d | 生命 %d]" % [bot_name, state_tag, int(shield), int(hp)]
 	status_lbl.modulate = Color("#ef4444") if scanned_timer > 0.0 else tier["color"]
 
-func _has_line_of_sight_to_player(player_node: Node3D) -> bool:
-	if player_node == null or get_world_3d() == null or get_world_3d().direct_space_state == null:
+func _can_see_target(target: Node3D) -> bool:
+	if not is_instance_valid(target):
+		return false
+	if "hp" in target and target.hp <= 0.0:
+		return false
+	if "in_dropship" in target and (target.in_dropship or target.is_skydiving):
+		return false
+
+	var to_target: Vector3 = target.global_position - global_position
+	var dist: float = to_target.length()
+	if dist > 68.0:
+		return false
+
+	# 1. Close-range auditory / CQB proximity awareness (<= 3.5m 360-degree detection)
+	if dist <= 3.5:
+		return _has_line_of_sight(target)
+
+	# 2. Sector / Cone Vision (110° horizontal FOV, half-angle 55°)
+	var fwd_flat := Vector3(-global_transform.basis.z.x, 0.0, -global_transform.basis.z.z).normalized()
+	var dir_flat := Vector3(to_target.x, 0.0, to_target.z).normalized()
+	var dot: float = fwd_flat.dot(dir_flat)
+	# cos(55°) ≈ 0.5735
+	if dot < 0.5735:
+		return false # In blind spot behind/beside the bot!
+
+	# 3. Raycast line-of-sight check (occluded by terrain/walls/crates)
+	return _has_line_of_sight(target)
+
+func _has_line_of_sight(target: Node3D) -> bool:
+	if not is_instance_valid(target) or get_world_3d() == null or get_world_3d().direct_space_state == null:
 		return true
-	var from_pt: Vector3 = global_position + Vector3(0, 1.52, 0)
-	var to_pt: Vector3 = player_node.global_position + Vector3(0, 1.35, 0)
+	var from_pt: Vector3 = global_position + Vector3(0, 1.48, 0)
+	var to_pt: Vector3 = target.global_position + Vector3(0, 1.35, 0)
 	var q := PhysicsRayQueryParameters3D.create(from_pt, to_pt, 1)
 	var hit: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
 	return hit.is_empty()
+
+func alert_to_threat(from_pos: Vector3, attacker: Node3D = null) -> void:
+	last_damage_from = from_pos
+	alert_reaction_timer = 0.28 # 280ms realistic human reaction time
+	if is_instance_valid(attacker) and attacker != self:
+		current_target = attacker
+
+func _update_combat_target() -> void:
+	if ai_mode != "combat":
+		current_target = _cached_player
+		return
+
+	# If current target is still valid, alive and in vision cone, stick with it
+	if is_instance_valid(current_target):
+		var still_valid: bool = true
+		if "hp" in current_target and current_target.hp <= 0.0:
+			still_valid = false
+		if "in_dropship" in current_target and (current_target.in_dropship or current_target.is_skydiving):
+			still_valid = false
+		if still_valid and _can_see_target(current_target):
+			return
+
+	# Search for best visible target (Player or Enemy Bot in different squad)
+	var best_target: Node3D = null
+	var min_dist: float = 999.0
+
+	# 1. Check player (squad 1)
+	if is_instance_valid(_cached_player) and not _cached_player.in_dropship and not _cached_player.is_skydiving:
+		if _can_see_target(_cached_player):
+			var d: float = global_position.distance_to(_cached_player.global_position)
+			min_dist = d
+			best_target = _cached_player
+
+	# 2. Check all bots in the scene (different squad)
+	var all_bots: Array = get_tree().get_nodes_in_group("bots")
+	for b in all_bots:
+		if b == self or not is_instance_valid(b):
+			continue
+		var other_bot: ApexBotAI = b as ApexBotAI
+		if other_bot == null or other_bot.hp <= 0.0 or other_bot.squad_id == squad_id:
+			continue # Friendly squad or dead
+		var d: float = global_position.distance_to(other_bot.global_position)
+		if d < min_dist and _can_see_target(other_bot):
+			min_dist = d
+			best_target = other_bot
+
+	current_target = best_target
 
 func _is_wall_in_direction(dir_world: Vector3, check_dist: float = 2.0) -> bool:
 	if get_world_3d() == null or get_world_3d().direct_space_state == null:
@@ -258,6 +338,8 @@ func _physics_process(delta: float) -> void:
 
 	if hit_flinch > 0.0:
 		hit_flinch = maxf(0.0, hit_flinch - delta * 5.0)
+	if alert_reaction_timer > 0.0:
+		alert_reaction_timer = maxf(0.0, alert_reaction_timer - delta)
 	if burst_aim_timer > 0.0:
 		burst_aim_timer = maxf(0.0, burst_aim_timer - delta)
 	if bot_land_timer > 0.0:
@@ -306,19 +388,20 @@ func _physics_process(delta: float) -> void:
 				if c is PlayerController:
 					_cached_player = c
 					break
-	var player_node: PlayerController = _cached_player
 
-	var dist_to_player: float = 999.0
+	_target_scan_timer -= delta
+	if _target_scan_timer <= 0.0:
+		_target_scan_timer = randf_range(0.20, 0.35)
+		_update_combat_target()
+
+	var active_target: Node3D = current_target if is_instance_valid(current_target) else _cached_player
+	var dist_to_target: float = 999.0
 	var has_los: bool = false
-	if player_node != null:
-		dist_to_player = global_position.distance_to(player_node.global_position)
-		_los_timer -= delta
-		if _los_timer <= 0.0:
-			_los_timer = randf_range(0.10, 0.18)
-			_cached_has_los = _has_line_of_sight_to_player(player_node)
-		has_los = _cached_has_los
-		var dy: float = (player_node.global_position.y + 1.35) - (global_position.y + 1.45)
-		aim_pitch = clampf(atan2(dy, maxf(1.0, dist_to_player)), -0.65, 0.65)
+	if active_target != null:
+		dist_to_target = global_position.distance_to(active_target.global_position)
+		has_los = _can_see_target(active_target)
+		var dy: float = (active_target.global_position.y + 1.35) - (global_position.y + 1.45)
+		aim_pitch = clampf(atan2(dy, maxf(1.0, dist_to_target)), -0.65, 0.65)
 
 	var is_moving: bool = false
 	var is_crouching: bool = false
@@ -364,7 +447,7 @@ func _physics_process(delta: float) -> void:
 			if _is_wall_in_direction(retreat_dir, 2.2) or is_on_wall():
 				strafe_dir = -strafe_dir
 				retreat_dir = (global_transform.basis.z * 0.55 + global_transform.basis.x * strafe_dir * 0.85).normalized()
-			desired_vel_xz = retreat_dir * 4.8
+			desired_vel_xz = retreat_dir * 4.08
 
 			if heal_timer <= 0.0:
 				if active_heal_type == "shield_battery":
@@ -395,13 +478,13 @@ func _physics_process(delta: float) -> void:
 				else:
 					run_dir = safe_dir.rotated(Vector3.UP, 1.4 * strafe_dir)
 
-			var run_speed: float = 12.8
+			var run_speed: float = 10.88
 			storm_slide_timer += delta
 			if storm_slide_timer > 3.6:
 				if storm_slide_timer < 4.4:
 					is_sliding = true
 					is_crouching = true
-					run_speed = 16.5
+					run_speed = 14.0
 				else:
 					is_sliding = false
 					storm_slide_timer = 0.0
@@ -426,7 +509,7 @@ func _physics_process(delta: float) -> void:
 					var r_pick: float = randf()
 					if r_pick < 0.42:
 						maneuver_style = "DIAGONAL_ADVANCE"
-						forward_bias = 0.58 if dist_to_player > 16.0 else -0.35
+						forward_bias = 0.58 if dist_to_target > 16.0 else -0.35
 					elif r_pick < 0.78:
 						maneuver_style = "WIDE_FLANK"
 						forward_bias = 0.32
@@ -455,13 +538,20 @@ func _physics_process(delta: float) -> void:
 				elif ai_mode == "combat" and burst_aim_timer <= 0.0 and randf() < 0.006:
 					crouch_timer = 0.52
 
-			# Face player smoothly, or angle 25% toward movement vector when sprinting in WIDE_FLANK
-			var fwd_to_player: Vector3 = -global_transform.basis.z
-			if player_node != null:
-				var to_p := Vector3(player_node.global_position.x - global_position.x, 0.0, player_node.global_position.z - global_position.z)
-				if to_p.length() > 0.6:
-					fwd_to_player = to_p.normalized()
-					var target_yaw: float = atan2(-fwd_to_player.x, -fwd_to_player.z)
+			# Face active target smoothly, or snap to damage source if alerted from behind
+			var face_pos := Vector3.ZERO
+			var has_face_target := false
+			if alert_reaction_timer > 0.0 and last_damage_from != Vector3.ZERO:
+				face_pos = last_damage_from
+				has_face_target = true
+			elif active_target != null:
+				face_pos = active_target.global_position
+				has_face_target = true
+
+			if has_face_target:
+				var to_tar := Vector3(face_pos.x - global_position.x, 0.0, face_pos.z - global_position.z)
+				if to_tar.length() > 0.6:
+					var target_yaw: float = atan2(-to_tar.normalized().x, -to_tar.normalized().z)
 					rotation.y = lerp_angle(rotation.y, target_yaw, delta * 8.5)
 
 			var right_vec: Vector3 = global_transform.basis.x * strafe_dir
@@ -494,36 +584,43 @@ func _physics_process(delta: float) -> void:
 				if is_on_floor():
 					bot_climb_timer = 0.0
 
-			# Smooth speed profile: steady ADS pace (`5.2 m/s`) while firing bursts, athletic run (`8.4 m/s`) when flanking!
-			var move_spd: float = 15.8 if is_sliding else (5.2 if burst_aim_timer > 0.0 else (6.0 if is_crouching else (6.8 if ai_mode == "strafe" else 8.6)))
+			# Smooth speed profile scaled down by 15% to strictly match player performance
+			var move_spd: float = 13.43 if is_sliding else (4.42 if burst_aim_timer > 0.0 else (5.10 if is_crouching else (5.78 if ai_mode == "strafe" else 7.31)))
 			# Smooth turn-around ease when maneuver_timer is near switching
 			var turn_ease: float = clampf(minf(maneuver_timer, 2.5 - maneuver_timer) * 3.5, 0.45, 1.0)
 			desired_vel_xz = move_dir * (move_spd * turn_ease)
 
-			if ai_mode == "combat" and player_node != null and dist_to_player < 68.0 and has_los and bot_reload_timer <= 0.0 and not player_node.in_dropship and not player_node.is_skydiving:
-				fire_cooldown -= delta
-				if fire_cooldown <= 0.0:
-					if bot_ammo <= 0:
-						var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
-						bot_reload_timer = float(wep_d.get("reload", 2.3))
-						_update_overhead_label()
-					else:
-						fire_cooldown = randf_range(1.15, 1.95)
-						burst_aim_timer = 0.55
-						_fire_burst_at_player(player_node)
+			if ai_mode == "combat" and active_target != null and dist_to_target < 68.0 and has_los and bot_reload_timer <= 0.0:
+				var target_can_be_shot: bool = true
+				if "in_dropship" in active_target and (active_target.in_dropship or active_target.is_skydiving):
+					target_can_be_shot = false
+				if "hp" in active_target and active_target.hp <= 0.0:
+					target_can_be_shot = false
+
+				if target_can_be_shot:
+					fire_cooldown -= delta
+					if fire_cooldown <= 0.0:
+						if bot_ammo <= 0:
+							var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
+							bot_reload_timer = float(wep_d.get("reload", 2.3))
+							_update_overhead_label()
+						else:
+							fire_cooldown = randf_range(1.15, 1.95)
+							burst_aim_timer = 0.55
+							_fire_burst_at_target(active_target)
 
 	velocity.x = lerpf(velocity.x, desired_vel_xz.x, delta * 8.5)
 	velocity.z = lerpf(velocity.z, desired_vel_xz.z, delta * 8.5)
 	move_and_slide()
 
 	var should_animate: bool = true
-	if dist_to_player > 55.0:
+	if dist_to_target > 55.0:
 		_anim_lod_timer += delta
 		if _anim_lod_timer < 0.08:
 			should_animate = false
 		else:
 			_anim_lod_timer = 0.0
-	elif dist_to_player > 28.0:
+	elif dist_to_target > 28.0:
 		_anim_lod_timer += delta
 		if _anim_lod_timer < 0.04:
 			should_animate = false
@@ -572,12 +669,15 @@ func _animate_rig_limbs(delta: float, is_moving: bool, is_crouching: bool) -> vo
 	}
 	LegendRigBuilder.animate_rig(rig_node, delta, anim_dict)
 
-func _fire_burst_at_player(player_node: PlayerController) -> void:
+func _fire_burst_at_target(target_node: Node3D) -> void:
 	bot_ammo = maxi(0, bot_ammo - 3)
 	if bot_ammo <= 0:
 		var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
 		bot_reload_timer = float(wep_d.get("reload", 2.3))
 		_update_overhead_label()
+
+	# AI Gunfire sound with realistic 3D distance attenuation
+	AudioSynthesizer.play_bot_gunshot(bot_weapon_id, global_position)
 
 	if rig_node != null:
 		var mflash: Node3D = rig_node.find_child("BotMuzzleFlash", true, false)
@@ -589,7 +689,7 @@ func _fire_burst_at_player(player_node: PlayerController) -> void:
 			)
 
 	var p_from: Vector3 = global_position + Vector3(0, 1.38, 0)
-	var p_to: Vector3 = player_node.global_position + Vector3(randf_range(-0.55, 0.55), 1.2, randf_range(-0.55, 0.55))
+	var p_to: Vector3 = target_node.global_position + Vector3(randf_range(-0.45, 0.45), 1.25, randf_range(-0.45, 0.45))
 	var blocked_by_wall: bool = false
 	if get_world_3d() != null and get_world_3d().direct_space_state != null:
 		var q := PhysicsRayQueryParameters3D.create(p_from, p_to, 1)
@@ -622,20 +722,31 @@ func _fire_burst_at_player(player_node: PlayerController) -> void:
 				tr.queue_free()
 		)
 
-	if not blocked_by_wall and PlayerState.void_timer <= 0.0 and randf() < 0.40:
-		var dmg: float = 10.0
-		if PlayerState.selected_legend_id == "gibraltar" and player_node.is_ads and PlayerState.gun_shield_hp > 0.0:
-			PlayerState.gun_shield_hp = maxf(0.0, PlayerState.gun_shield_hp - dmg)
-			return
-		if PlayerState.shield > 0.0:
-			PlayerState.shield = maxf(0.0, PlayerState.shield - dmg)
-		else:
-			PlayerState.hp = maxf(20.0, PlayerState.hp - dmg)
-		PlayerState.state_updated.emit()
+	if not blocked_by_wall and randf() < 0.45:
+		var wep_d: Dictionary = GameData.get_weapon_by_id(bot_weapon_id)
+		var base_dmg: float = float(wep_d.get("damage", 14.0))
+		var burst_hits: int = randi_range(1, 2)
+		var total_dmg: float = base_dmg * float(burst_hits)
 
-func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
+		if target_node is PlayerController:
+			var pc: PlayerController = target_node as PlayerController
+			pc.take_damage(total_dmg, global_position)
+		elif target_node is ApexBotAI:
+			var bot_tar: ApexBotAI = target_node as ApexBotAI
+			var was_head: bool = (randf() < 0.15)
+			var head_dmg: int = int(total_dmg * (1.5 if was_head else 1.0))
+			bot_tar.apply_damage(head_dmg, was_head, str(wep_d.get("name", "步枪")), self)
+			bot_tar.alert_to_threat(global_position, self)
+
+func apply_damage(dmg: int, is_headshot: bool, weapon_name: String, attacker: Node3D = null) -> void:
 	if hp <= 0.0:
 		return
+
+	if attacker != null and attacker != self:
+		alert_to_threat(attacker.global_position, attacker)
+
+	var is_player_attacker: bool = (attacker == null or attacker is PlayerController)
+
 	var now_ms: int = Time.get_ticks_msec()
 	if now_ms - last_hit_ms > 2200:
 		combo_damage = 0
@@ -658,46 +769,56 @@ func apply_damage(dmg: int, is_headshot: bool, weapon_name: String) -> void:
 		rem -= s_dmg
 		if shield <= 0.0:
 			cracked_now = true
-			AudioSynthesizer.play_shield_crack()
+			if is_player_attacker:
+				AudioSynthesizer.play_shield_crack()
+				PlayerState.killfeed_pushed.emit("⚡ 击碎了 %s 的 Lv.%d 进化护盾！" % [bot_name, evo_level], GameData.get_evo_tier(evo_level)["color"])
 			_spawn_shield_crack_vfx()
-			PlayerState.killfeed_pushed.emit("⚡ 击碎了 %s 的 Lv.%d 进化护盾！" % [bot_name, evo_level], GameData.get_evo_tier(evo_level)["color"])
-			if GameData.get_legend_by_id(PlayerState.selected_legend_id)["class_id"] == "ASSAULT":
-				PlayerState.double_time_timer = 3.5
 			if is_on_floor() and ai_mode != "static":
 				combat_slide_timer = 0.65
 				is_sliding = true
 		else:
-			AudioSynthesizer.play_armor_hit(evo_level, is_headshot, combo_hits)
+			if is_player_attacker:
+				AudioSynthesizer.play_armor_hit(evo_level, is_headshot, combo_hits)
 	else:
-		AudioSynthesizer.play_flesh_hit(is_headshot)
+		if is_player_attacker:
+			AudioSynthesizer.play_flesh_hit(is_headshot)
 
 	if rem > 0.0:
 		hp = maxf(0.0, hp - rem)
 
-	PlayerState.add_damage_and_evo(dmg)
-	var display_tier: int = evo_level if had_shield else 0
-	PlayerState.hit_feedback_pushed.emit(bot_name, dmg, combo_damage, is_headshot, display_tier, cracked_now)
-	var hit_wpos: Vector3 = global_position + Vector3(0, 1.48, 0)
-	PlayerState.floating_damage_spawned.emit(hit_wpos, dmg, is_headshot, display_tier, cracked_now)
+	if is_player_attacker:
+		PlayerState.add_damage_and_evo(dmg)
+		var display_tier: int = evo_level if had_shield else 0
+		PlayerState.hit_feedback_pushed.emit(bot_name, dmg, combo_damage, is_headshot, display_tier, cracked_now)
+		var hit_wpos: Vector3 = global_position + Vector3(0, 1.48, 0)
+		PlayerState.floating_damage_spawned.emit(hit_wpos, dmg, is_headshot, display_tier, cracked_now)
+
 	_update_overhead_label()
 
 	if hp <= 0.0:
-		AudioSynthesizer.play_kill_confirmed()
-		PlayerState.kills += 1
-		if PlayerState.kills == 1:
-			AudioSynthesizer.play_announcer("first_blood")
-		elif PlayerState.kills == 3:
-			AudioSynthesizer.play_announcer("kill_leader")
+		if is_player_attacker:
+			AudioSynthesizer.play_kill_confirmed()
+			PlayerState.kills += 1
+			if PlayerState.kills == 1:
+				AudioSynthesizer.play_announcer("first_blood")
+			elif PlayerState.kills == 3:
+				AudioSynthesizer.play_announcer("kill_leader")
+			else:
+				AudioSynthesizer.play_knockdown()
+			PlayerState.add_damage_and_evo(100)
+			if PlayerState.beast_timer > 0.0:
+				PlayerState.beast_timer += 4.0
+				PlayerState.hp = minf(PlayerState.max_hp, PlayerState.hp + 40.0)
+			var inflicted: int = maxi(100, combo_damage)
+			PlayerState.enemy_knocked_down.emit(bot_name, weapon_name, inflicted, 150)
+			PlayerState.killfeed_pushed.emit("💀 你使用 [%s] 击倒并淘汰了 %s" % [weapon_name, bot_name], Color("#ff1e42"))
+			PlayerState.enemy_eliminated.emit(bot_name, weapon_name, PlayerState.kills)
 		else:
-			AudioSynthesizer.play_knockdown()
-		PlayerState.add_damage_and_evo(100)
-		if PlayerState.beast_timer > 0.0:
-			PlayerState.beast_timer += 4.0
-			PlayerState.hp = minf(PlayerState.max_hp, PlayerState.hp + 40.0)
-		var inflicted: int = maxi(100, combo_damage)
-		PlayerState.enemy_knocked_down.emit(bot_name, weapon_name, inflicted, 150)
-		PlayerState.killfeed_pushed.emit("💀 你使用 [%s] 击倒并淘汰了 %s" % [weapon_name, bot_name], Color("#ff1e42"))
-		PlayerState.enemy_eliminated.emit(bot_name, weapon_name, PlayerState.kills)
+			var killer_title: String = "敌方传奇"
+			if "bot_name" in attacker:
+				killer_title = attacker.bot_name
+			PlayerState.killfeed_pushed.emit("💀 %s 击倒并淘汰了 %s" % [killer_title, bot_name], Color("#94a3b8"))
+
 		is_dying = true
 		death_collapse_timer = 0.0
 		dying_weapon_name = weapon_name

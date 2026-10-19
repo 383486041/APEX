@@ -17,6 +17,8 @@ var heal_channel: AudioStreamPlayer
 var charge_channel: AudioStreamPlayer
 var announcer_channel: AudioStreamPlayer
 var voice_channel: AudioStreamPlayer
+var hit_channel: AudioStreamPlayer
+var hit_headshot_channel: AudioStreamPlayer
 var next_channel_idx: int = 0
 var muted: bool = false
 
@@ -162,6 +164,16 @@ func _ready() -> void:
 	voice_channel.volume_db = 1.0
 	add_child(voice_channel)
 
+	hit_channel = AudioStreamPlayer.new()
+	hit_channel.name = "HitChannel"
+	hit_channel.volume_db = 2.0
+	add_child(hit_channel)
+
+	hit_headshot_channel = AudioStreamPlayer.new()
+	hit_headshot_channel.name = "HitHeadshotChannel"
+	hit_headshot_channel.volume_db = 3.5
+	add_child(hit_headshot_channel)
+
 	_prebake_core_soundbank()
 	_preload_authentic_soundbank()
 
@@ -178,6 +190,22 @@ func _preload_authentic_soundbank() -> void:
 			var s: AudioStream = load(path)
 			if s != null:
 				sfx_cache[key] = s
+
+	# Preload authentic hitmarker WAVs
+	var h_shield_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Shield.wav"
+	if ResourceLoader.exists(h_shield_path):
+		var sh: AudioStream = load(h_shield_path)
+		if sh != null: sfx_cache["hit_shield"] = sh
+
+	var h_flesh_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Flesh.wav"
+	if ResourceLoader.exists(h_flesh_path):
+		var fl: AudioStream = load(h_flesh_path)
+		if fl != null: sfx_cache["hit_flesh"] = fl
+
+	var h_hs_path := "res://assets/sounds/3_Combat_and_HUD/Hit_Headshot.wav"
+	if ResourceLoader.exists(h_hs_path):
+		var hs: AudioStream = load(h_hs_path)
+		if hs != null: sfx_cache["hit_headshot"] = hs
 
 func get_sfx(key: String) -> AudioStream:
 	if sfx_cache.has(key):
@@ -541,13 +569,71 @@ func play_melee_Whoosh(is_heavy: bool = false) -> void:
 	_play_wav(stream, 1.0, -1.5)
 
 func play_armor_hit(evo_level: int = 2, is_headshot: bool = false, combo_hits: int = 1) -> void:
-	var p_scale: float = 1.0 + minf(0.35, float(combo_hits) * 0.03) + float(evo_level) * 0.04
+	if muted:
+		return
+	var p_scale: float = clampf(1.0 + float(combo_hits) * 0.025 + float(evo_level) * 0.03, 0.9, 1.4)
+	var s: AudioStream = sfx_cache.get("hit_shield", wav_cache.get("armor_hit"))
+	if s and is_instance_valid(hit_channel):
+		hit_channel.stream = s
+		hit_channel.pitch_scale = p_scale
+		hit_channel.volume_db = 2.0
+		hit_channel.play()
+	elif s:
+		_play_wav(s, p_scale, 1.5)
 	if is_headshot:
-		p_scale *= 1.22
-	_play_wav(wav_cache.get("armor_hit"), p_scale, -0.5 if is_headshot else -1.5)
+		play_headshot_ding()
 
 func play_flesh_hit(is_headshot: bool = false) -> void:
-	_play_wav(wav_cache.get("flesh_hit"), 1.18 if is_headshot else 1.0, 0.0 if is_headshot else -1.2)
+	if muted:
+		return
+	var s: AudioStream = sfx_cache.get("hit_flesh", wav_cache.get("flesh_hit"))
+	if s and is_instance_valid(hit_channel):
+		hit_channel.stream = s
+		hit_channel.pitch_scale = randf_range(0.98, 1.04)
+		hit_channel.volume_db = 2.0
+		hit_channel.play()
+	elif s:
+		_play_wav(s, 1.0, 1.5)
+	if is_headshot:
+		play_headshot_ding()
+
+func play_headshot_ding() -> void:
+	if muted:
+		return
+	var s: AudioStream = sfx_cache.get("hit_headshot")
+	if s and is_instance_valid(hit_headshot_channel):
+		hit_headshot_channel.stream = s
+		hit_headshot_channel.pitch_scale = randf_range(0.99, 1.02)
+		hit_headshot_channel.volume_db = 3.5
+		hit_headshot_channel.play()
+
+func play_bot_gunshot(wid: String, bot_pos: Vector3) -> void:
+	if muted:
+		return
+	var s: AudioStream = get_sfx(wid)
+	if s == null:
+		s = wav_cache.get("gun_ar_light")
+	if s == null:
+		return
+
+	# Calculate 3D distance attenuation from player camera
+	var p_cam: Camera3D = null
+	var vp := get_viewport()
+	if vp:
+		p_cam = vp.get_camera_3d()
+
+	var vol: float = 0.0
+	if p_cam != null:
+		var dist: float = bot_pos.distance_to(p_cam.global_position)
+		if dist > 110.0:
+			return # Inaudible beyond 110m
+		# Realistic sound falloff: 0.0dB at <8m, -12dB at 35m, -24dB at 80m
+		vol = clampf(lerpf(0.0, -26.0, dist / 85.0), -35.0, 0.0)
+	else:
+		vol = -4.0
+
+	var pitch: float = randf_range(0.95, 1.05)
+	_play_stream(s, pitch, vol)
 
 func play_shield_crack() -> void:
 	var s: AudioStream = get_sfx("shield_crack")

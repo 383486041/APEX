@@ -10,9 +10,9 @@ extends CharacterBody3D
 ## - Landing Knee-Compression Spring (`land_compress_timer`) + Horizon Spacewalk soft-landing passive
 ## - Lower-Body / Upper-Body Direction Split (`move_angle_local`) for natural 3rd-person diagonal/strafe gait
 
-@export var base_speed: float = 9.6
-@export var sprint_speed: float = 14.4
-@export var slide_speed: float = 20.8
+@export var base_speed: float = 8.16
+@export var sprint_speed: float = 12.24
+@export var slide_speed: float = 17.68
 @export var jump_velocity: float = 11.4
 @export var gravity: float = 24.5
 
@@ -479,7 +479,7 @@ func _physics_process(delta: float) -> void:
 
 	if not is_wall_climbing:
 		var horiz_speed: float = Vector2(velocity.x, velocity.z).length()
-		if crouch_just_pressed and (sprinting or horiz_speed > 8.2) and is_on_floor() and not is_sliding and slide_cooldown <= 0.0 and input_dir.length() > 0.1:
+		if crouch_just_pressed and (sprinting or horiz_speed > 7.0) and is_on_floor() and not is_sliding and slide_cooldown <= 0.0 and input_dir.length() > 0.1:
 			is_sliding = true
 			slide_timer = 0.76
 			slide_dir = move_vec if move_vec.length() > 0.1 else -global_transform.basis.z.normalized()
@@ -489,7 +489,7 @@ func _physics_process(delta: float) -> void:
 
 		if is_sliding:
 			slide_timer -= delta
-			if slide_timer <= 0.0 or not crouching or horiz_speed < 4.5 or not is_on_floor():
+			if slide_timer <= 0.0 or not crouching or horiz_speed < 3.8 or not is_on_floor():
 				is_sliding = false
 				slide_timer = 0.0
 				slide_cooldown = 0.52
@@ -506,7 +506,7 @@ func _physics_process(delta: float) -> void:
 			var slide_taper: float = clampf(slide_timer / 1.05, 0.38, 1.0)
 			spd = slide_speed * slide_taper
 		elif crouching:
-			spd = 6.2
+			spd = 5.27
 
 		if PlayerState.stim_timer > 0.0 or PlayerState.void_timer > 0.0 or PlayerState.beast_timer > 0.0 or PlayerState.double_time_timer > 0.0:
 			spd *= 1.32
@@ -799,3 +799,39 @@ func _compute_spring_arm_cam_pos(pivot_local: Vector3, desired_local: Vector3) -
 		var safe_w: Vector3 = from_w.lerp(hit_w, 0.82)
 		return to_local(safe_w)
 	return desired_local
+
+
+func take_damage(dmg: float, _attacker_pos: Vector3 = Vector3.ZERO) -> void:
+	if PlayerState.void_timer > 0.0 or in_dropship or is_skydiving:
+		return
+
+	# Gibraltar Arm Gun Shield absorption
+	if PlayerState.selected_legend_id == "gibraltar" and is_ads and PlayerState.gun_shield_hp > 0.0:
+		PlayerState.gun_shield_hp = maxf(0.0, PlayerState.gun_shield_hp - dmg)
+		AudioSynthesizer.play_armor_hit(PlayerState.evo_level, false, 1)
+		return
+
+	if PlayerState.shield > 0.0:
+		var s_dmg: float = minf(PlayerState.shield, dmg)
+		PlayerState.shield -= s_dmg
+		var rem: float = dmg - s_dmg
+		if PlayerState.shield <= 0.0:
+			AudioSynthesizer.play_shield_crack()
+		else:
+			AudioSynthesizer.play_armor_hit(PlayerState.evo_level, false, 1)
+		if rem > 0.0:
+			PlayerState.hp = maxf(1.0, PlayerState.hp - rem)
+			AudioSynthesizer.play_flesh_hit(false)
+	else:
+		PlayerState.hp = maxf(1.0, PlayerState.hp - dmg)
+		AudioSynthesizer.play_flesh_hit(false)
+
+	# Flinch and camera shake
+	cam_shake = minf(1.0, cam_shake + 0.35)
+	recoil_pitch += randf_range(-0.035, 0.035)
+
+	# Bangalore / Assault Passive: Double Time sprint burst under fire
+	if PlayerState.selected_legend_id == "bangalore" or GameData.get_legend_by_id(PlayerState.selected_legend_id).get("class_id", "") == "ASSAULT":
+		PlayerState.double_time_timer = 3.5
+
+	PlayerState.state_updated.emit()
